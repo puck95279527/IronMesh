@@ -1,0 +1,47 @@
+namespace ironmesh.protocol.cluster;
+
+enum IronClusterNodeRole : ubyte {
+  Gateway = 0,
+  Business = 1,
+  Control = 2
+}
+
+enum IronClusterState : ubyte {
+  Unknown = 0,
+  Starting = 1,
+  Healthy = 2,
+  Offline = 3
+}
+
+enum IronClusterEndpointProtocol : ubyte {
+  Tcp = 0,
+  Http = 1
+}
+
+table IronClusterEndpoint {
+  name: string;
+  protocol: IronClusterEndpointProtocol;
+  host: string;
+  port: ushort;
+}
+
+table IronClusterService {
+  service_name: string;
+  state: IronClusterState;
+  endpoints: [IronClusterEndpoint];
+}
+
+table IronClusterNode {
+  node_id: string;
+  role: IronClusterNodeRole;
+  state: IronClusterState;
+  services: [IronClusterService];
+}
+
+table IronClusterSnap {
+  cluster_id: string;
+  metadata_version: ulong;
+  nodes: [IronClusterNode];
+}
+
+root_type IronClusterSnap;

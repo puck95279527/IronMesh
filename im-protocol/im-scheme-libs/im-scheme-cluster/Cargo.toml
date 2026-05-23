@@ -1,0 +1,11 @@
+[package]
+name = "im-scheme-cluster"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "im_scheme_cluster"
+path = "src/lib.rs"
+
+[dependencies]
+flatbuffers = "=25.12.19"
