@@ -1,10 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "im-protocol/im-scheme-libs/im-scheme-cluster",
+    "iron-protocol/iron-scheme-libs/iron-scheme-cluster",
 ]
 
 # Add workspace members only after each crate directory has its own Cargo.toml.
 # Expected first members:
-# - im-gateway
-# - im-business/im-kv-service
+# - iron-gateway

@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "im-scheme-cluster"
+name = "iron-scheme-cluster"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",

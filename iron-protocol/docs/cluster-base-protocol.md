@@ -4,9 +4,9 @@ This document describes the minimal cluster data model for IronMesh.
 
 The FlatBuffers schema is the source of truth for the cluster protocol:
 
-- `im-protocol/im-flat-dsl/cluster/cluster.fbs`
+- `iron-protocol/iron-flat-dsl/cluster/cluster.fbs`
 
-The Rust crate `im-protocol/im-scheme-libs/im-scheme-cluster` generates Rust bindings from that schema during build.
+The Rust crate `iron-protocol/iron-scheme-libs/iron-scheme-cluster` generates Rust bindings from that schema during build.
 
 The first version intentionally keeps the model small. It only answers these questions:
 
@@ -33,7 +33,7 @@ flowchart TD
     end
 
     subgraph SERVICE["iron_cluster_service / 集群服务"]
-        SERVICE_service_name["service_name: string<br/>服务名称，例如 im-kv-service"]
+        SERVICE_service_name["service_name: string<br/>服务名称，例如 iron-im-service"]
         SERVICE_state["state: enum<br/>服务状态"]
         SERVICE_endpoints["endpoints: iron_cluster_endpoint[]<br/>指向该服务的连接地址列表"]
     end
@@ -55,7 +55,7 @@ flowchart TD
 The cluster protocol uses one FlatBuffers schema file in the first version:
 
 ```text
-im-protocol/im-flat-dsl/cluster/cluster.fbs
+iron-protocol/iron-flat-dsl/cluster/cluster.fbs
 ```
 
 Naming rules:
@@ -98,7 +98,7 @@ iron_cluster_snap
 | `iron_cluster_node` | `role` | 节点角色，例如网关、业务、控制节点。 |
 | `iron_cluster_node` | `state` | 节点状态。 |
 | `iron_cluster_node` | `services[]` | 指向该节点上的服务列表。 |
-| `iron_cluster_service` | `service_name` | 服务名称，例如 `im-kv-service`。 |
+| `iron_cluster_service` | `service_name` | 服务名称，例如 `iron-im-service`。 |
 | `iron_cluster_service` | `state` | 服务状态。 |
 | `iron_cluster_service` | `endpoints[]` | 指向该服务的连接地址列表。 |
 | `iron_cluster_endpoint` | `name` | 连接名称，例如 `internal-tcp`。 |
@@ -146,19 +146,19 @@ iron_cluster_snap
 
 ## Build Strategy
 
-`im-scheme-cluster` generates Rust bindings at build time by calling the
+`iron-scheme-cluster` generates Rust bindings at build time by calling the
 project-local FlatBuffers compiler:
 
-- input schema: `im-protocol/im-flat-dsl/cluster/cluster.fbs`
-- compiler: `im-protocol/tools/flatc`
+- input schema: `iron-protocol/iron-flat-dsl/cluster/cluster.fbs`
+- compiler: `iron-protocol/tools/flatc`
 - compiler version: locked to `25.12.19`
-- output directory: `im-protocol/im-scheme-libs/im-scheme-cluster/src/scheme`
+- output directory: `iron-protocol/iron-scheme-libs/iron-scheme-cluster/src/scheme`
 - generated file: `cluster_generated.rs`
-- module declaration: `im-protocol/im-scheme-libs/im-scheme-cluster/src/scheme/mod.rs`
+- module declaration: `iron-protocol/iron-scheme-libs/iron-scheme-cluster/src/scheme/mod.rs`
 
 The generated Rust file is committed under `src/scheme` because this project
 uses a fixed protocol-local compiler. The build script only uses
-`im-protocol/tools/flatc`; it does not read `FLATC` and does not
+`iron-protocol/tools/flatc`; it does not read `FLATC` and does not
 search system `PATH`. Upgrading FlatBuffers must be a manual project change.
 
 ## Fields Intentionally Not Included

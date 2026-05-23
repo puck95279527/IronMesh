@@ -7,28 +7,29 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 系统初期包含两个主要角色：
 
 - 网关：接收外部请求，并将请求路由或转发到业务系统。
-- 业务系统：承载具体业务能力。当前第一个示例业务系统是 KV 服务。
+- 业务系统：承载具体业务能力。
 
 网络通信、协议设计、运行时基础设施应该演进为可复用的框架能力，不应该和某一个具体业务实现强绑定。
 
 ## 顶层目录职责
 
-- `im-gateway/`：网关系统。
-- `im-business/`：业务系统父目录。
-- `im-business/im-kv-service/`：示例 KV 业务系统。进入实现阶段后，它应该是一个独立二进制 crate。
-- `im-core/`：核心基础设施父目录，不绑定任何具体业务系统。
-- `im-protocol/`：协议设计、DSL、FlatBuffers schema、数据模型。
-- `im-common/`：没有业务语义、没有网络语义的公共基础能力。
+- `iron-gateway/`：网关系统。
+- `iron-business/`：业务系统父目录。
+- `iron-business/iron-auth-service/`：登录认证服务。进入实现阶段后，它应该是一个独立二进制 crate。
+- `iron-business/iron-im-service/`：即时通讯服务。进入实现阶段后，它应该是一个独立二进制 crate。
+- `iron-core/`：核心基础设施父目录，不绑定任何具体业务系统。
+- `iron-protocol/`：协议设计、DSL、FlatBuffers schema、数据模型。
+- `iron-common/`：没有业务语义、没有网络语义的公共基础能力。
 
 ## 边界规则
 
-- 具体业务逻辑只放在 `im-business/*` 下。
-- 网络连接、连接池、路由抽象、运行时辅助、编解码框架代码放在 `im-core/*` 下。
-- 协议结构、schema、数据模型、协议 DSL 定义放在 `im-protocol/*` 下。
-- 错误、配置辅助、日志初始化、时间工具、ID 工具、通用工具放在 `im-common/*` 下。
-- 不要把业务逻辑放进 `im-core` 或 `im-common`。
-- 不要把具体协议 schema 放进 `im-core`。
-- 不要让 `im-common` 依赖业务、网关、核心网络或具体协议概念。
+- 具体业务逻辑只放在 `iron-business/*` 下。
+- 网络连接、连接池、路由抽象、运行时辅助、编解码框架代码放在 `iron-core/*` 下。
+- 协议结构、schema、数据模型、协议 DSL 定义放在 `iron-protocol/*` 下。
+- 错误、配置辅助、日志初始化、时间工具、ID 工具、通用工具放在 `iron-common/*` 下。
+- 不要把业务逻辑放进 `iron-core` 或 `iron-common`。
+- 不要把具体协议 schema 放进 `iron-core`。
+- 不要让 `iron-common` 依赖业务、网关、核心网络或具体协议概念。
 
 ## 拆分原则
 
@@ -46,6 +47,6 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - Rust 代码统一使用 `//` 注释，不使用 `///` 或 `//!`。
 - 自动生成代码不受本规范约束，例如 `src/scheme/cluster_generated.rs`。
 - 非自动生成的 Rust 代码中，每个数据结构上方、每个字段后方、每个方法上方都必须有中文注释。
-- `im-protocol/im-flat-dsl` 下所有协议 schema 中，所有协议数据模型定义上方、所有字段后方、所有枚举值后方都必须有中文注释。
+- `iron-protocol/iron-flat-dsl` 下所有协议 schema 中，所有协议数据模型定义上方、所有字段后方、所有枚举值后方都必须有中文注释。
 - 协议数据模型包括但不限于：`namespace`、`enum`、`table`、`struct`、`union`、`rpc_service`、`root_type`。
 - 涉及数据结构或方法变更时，Codex/AI 必须先用表格说明设计，用户确认后再编码。

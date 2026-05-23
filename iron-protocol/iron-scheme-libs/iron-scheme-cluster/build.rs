@@ -6,7 +6,7 @@ use std::process::Command;
 fn main() {
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"));
-    let schema = manifest_dir.join("../../im-flat-dsl/cluster/cluster.fbs");
+    let schema = manifest_dir.join("../../iron-flat-dsl/cluster/cluster.fbs");
     let out_dir = manifest_dir.join("src/scheme");
     let flatc = manifest_dir.join("../../tools/flatc");
 
@@ -21,7 +21,7 @@ fn main() {
         .output()
         .unwrap_or_else(|error| {
             panic!(
-                "failed to execute protocol-local flatc `{}`: {error}. Restore im-protocol/tools/flatc version 25.12.19",
+                "failed to execute protocol-local flatc `{}`: {error}. Restore iron-protocol/tools/flatc version 25.12.19",
                 flatc.display()
             )
         });
