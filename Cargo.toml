@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "iron-gateway",
+    "iron-business/iron-service-auth",
+    "iron-business/iron-service-ddz",
+    "iron-business/iron-service-pdk",
     "iron-core/iron-core-business",
     "iron-core/iron-core-cluster",
     "iron-protocol/iron-scheme-libs/iron-scheme-business",
@@ -13,12 +17,19 @@ edition = "2024"
 
 [workspace.dependencies]
 # 第三方依赖。
+axum = "0.8"
 flatbuffers = "=25.12.19"
+openraft = { version = "=0.9.24", features = ["generic-snapshot-data", "serde", "storage-v2"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time"] }
+toml = "1.1.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # workspace 内部 crate。
+iron-core-cluster = { path = "iron-core/iron-core-cluster" }
 iron-scheme-business = { path = "iron-protocol/iron-scheme-libs/iron-scheme-business" }
 iron-scheme-cluster = { path = "iron-protocol/iron-scheme-libs/iron-scheme-cluster" }
-
-# 只有目录已经拥有自己的 Cargo.toml 后，才加入 workspace members。
-# 后续预期成员：
-# - iron-gateway

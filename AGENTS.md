@@ -20,7 +20,7 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - `iron-business/iron-service-pdk/`：跑得快服务。进入实现阶段后，它应该是一个独立二进制 crate。
 - `iron-core/`：核心基础设施父目录，不绑定任何具体业务系统。
 - `iron-core/iron-core-business/`：业务通信核心模型和业务协议导出。
-- `iron-core/iron-core-cluster/`：集群通信核心模型和集群协议导出。
+- `iron-core/iron-core-cluster/`：集群通信核心、服务注册发现、集群控制面和集群协议导出。
 - `iron-protocol/`：协议设计、DSL、FlatBuffers schema、数据模型。
 - `iron-protocol/iron-flat-dsl/cluster/`：集群之间的基础协议。
 - `iron-protocol/iron-flat-dsl/business/`：集群业务协议。

@@ -1,0 +1,14 @@
+[package]
+name = "iron-gateway"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "iron-gateway"
+path = "src/main.rs"
+
+[dependencies]
+iron-core-cluster.workspace = true
+
+[build-dependencies]
+iron-core-cluster.workspace = true
