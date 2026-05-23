@@ -8,7 +8,7 @@ fn main() {
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"));
     let schema = manifest_dir.join("../../im-flat-dsl/cluster/cluster.fbs");
     let out_dir = manifest_dir.join("src/scheme");
-    let flatc = manifest_dir.join("../../im-flat-dsl/tools/flatc");
+    let flatc = manifest_dir.join("../../tools/flatc");
 
     println!("cargo:rerun-if-changed={}", schema.display());
     println!("cargo:rerun-if-changed={}", flatc.display());
@@ -21,7 +21,7 @@ fn main() {
         .output()
         .unwrap_or_else(|error| {
             panic!(
-                "failed to execute schema-local flatc `{}`: {error}. Restore im-protocol/im-flat-dsl/tools/flatc version 25.12.19",
+                "failed to execute protocol-local flatc `{}`: {error}. Restore im-protocol/tools/flatc version 25.12.19",
                 flatc.display()
             )
         });

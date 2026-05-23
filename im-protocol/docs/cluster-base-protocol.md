@@ -150,15 +150,15 @@ iron_cluster_snap
 project-local FlatBuffers compiler:
 
 - input schema: `im-protocol/im-flat-dsl/cluster/cluster.fbs`
-- compiler: `im-protocol/im-flat-dsl/tools/flatc`
+- compiler: `im-protocol/tools/flatc`
 - compiler version: locked to `25.12.19`
 - output directory: `im-protocol/im-scheme-libs/im-scheme-cluster/src/scheme`
 - generated file: `cluster_generated.rs`
 - module declaration: `im-protocol/im-scheme-libs/im-scheme-cluster/src/scheme/mod.rs`
 
 The generated Rust file is committed under `src/scheme` because this project
-uses a fixed schema-local compiler. The build script only uses
-`im-protocol/im-flat-dsl/tools/flatc`; it does not read `FLATC` and does not
+uses a fixed protocol-local compiler. The build script only uses
+`im-protocol/tools/flatc`; it does not read `FLATC` and does not
 search system `PATH`. Upgrading FlatBuffers must be a manual project change.
 
 ## Fields Intentionally Not Included
