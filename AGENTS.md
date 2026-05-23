@@ -15,10 +15,13 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 
 - `iron-gateway/`：网关系统。
 - `iron-business/`：业务系统父目录。
-- `iron-business/iron-auth-service/`：登录认证服务。进入实现阶段后，它应该是一个独立二进制 crate。
-- `iron-business/iron-im-service/`：即时通讯服务。进入实现阶段后，它应该是一个独立二进制 crate。
+- `iron-business/iron-service-auth/`：登录注册服务。进入实现阶段后，它应该是一个独立二进制 crate。
+- `iron-business/iron-service-ddz/`：斗地主服务。进入实现阶段后，它应该是一个独立二进制 crate。
+- `iron-business/iron-service-pdk/`：跑得快服务。进入实现阶段后，它应该是一个独立二进制 crate。
 - `iron-core/`：核心基础设施父目录，不绑定任何具体业务系统。
 - `iron-protocol/`：协议设计、DSL、FlatBuffers schema、数据模型。
+- `iron-protocol/iron-flat-dsl/cluster/`：集群之间的基础协议。
+- `iron-protocol/iron-flat-dsl/business/`：集群业务协议。
 - `iron-common/`：没有业务语义、没有网络语义的公共基础能力。
 
 ## 边界规则

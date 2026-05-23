@@ -33,13 +33,13 @@ flowchart TD
     end
 
     subgraph SERVICE["iron_cluster_service / 集群服务"]
-        SERVICE_service_name["service_name: string<br/>服务名称，例如 iron-im-service"]
+        SERVICE_service_name["service_name: string<br/>服务名称，例如 iron-service-ddz"]
         SERVICE_state["state: enum<br/>服务状态"]
         SERVICE_endpoints["endpoints: iron_cluster_endpoint[]<br/>指向该服务的连接地址列表"]
     end
 
     subgraph ENDPOINT["iron_cluster_endpoint / 服务连接地址"]
-        ENDPOINT_name["name: string<br/>连接名称，例如 internal-tcp"]
+        ENDPOINT_name["name: string<br/>连接名称，例如 cluster-tcp"]
         ENDPOINT_protocol["protocol: enum<br/>协议，例如 Tcp"]
         ENDPOINT_host["host: string<br/>连接地址"]
         ENDPOINT_port["port: uint16<br/>连接端口"]
@@ -98,10 +98,10 @@ iron_cluster_snap
 | `iron_cluster_node` | `role` | 节点角色，例如网关、业务、控制节点。 |
 | `iron_cluster_node` | `state` | 节点状态。 |
 | `iron_cluster_node` | `services[]` | 指向该节点上的服务列表。 |
-| `iron_cluster_service` | `service_name` | 服务名称，例如 `iron-im-service`。 |
+| `iron_cluster_service` | `service_name` | 服务名称，例如 `iron-service-ddz`。 |
 | `iron_cluster_service` | `state` | 服务状态。 |
 | `iron_cluster_service` | `endpoints[]` | 指向该服务的连接地址列表。 |
-| `iron_cluster_endpoint` | `name` | 连接名称，例如 `internal-tcp`。 |
+| `iron_cluster_endpoint` | `name` | 连接名称，例如 `cluster-tcp`。 |
 | `iron_cluster_endpoint` | `protocol` | 协议，例如 `Tcp`。 |
 | `iron_cluster_endpoint` | `host` | 连接地址。 |
 | `iron_cluster_endpoint` | `port` | 连接端口。 |
