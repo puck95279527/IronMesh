@@ -1,0 +1,54 @@
+namespace ironmesh.protocol.business.ddz;
+
+// ============================================================
+// iron-service-ddz 业务消息
+// ============================================================
+//
+// 斗地主服务当前只定义开始游戏与抢地主的最小协议模型。
+// user_id 不放在请求体内，避免客户端伪造身份；可信用户上下文来自
+// FixedHeader.actor_user_id。
+//
+
+// iron-service-ddz 最小返回码。
+enum IronDdzErrorCode : int {
+  Ok = 0,
+  Failed = 1,
+  InvalidParam = 2,
+  Unauthorized = 3
+}
+
+// 开始斗地主请求。
+table IronDdzStartReq {
+}
+
+// 开始斗地主响应。
+table IronDdzStartResp {
+  code: IronDdzErrorCode = Ok;
+  room_id: ulong = 0;
+}
+
+// 抢地主请求。
+table IronDdzGrabReq {
+  room_id: ulong = 0;
+  grab: bool = false;
+}
+
+// 抢地主结果响应或广播。
+table IronDdzGrabResp {
+  code: IronDdzErrorCode = Ok;
+  room_id: ulong = 0;
+  landlord_user_id: ulong = 0;
+}
+
+// ddz 服务内消息联合体。
+union IronDdzPayload {
+  IronDdzStartReq,
+  IronDdzStartResp,
+  IronDdzGrabReq,
+  IronDdzGrabResp
+}
+
+// ddz 服务级包装对象，用于顶层 IronBusinessServicePayload 分层。
+table IronDdzMessage {
+  payload: IronDdzPayload;
+}

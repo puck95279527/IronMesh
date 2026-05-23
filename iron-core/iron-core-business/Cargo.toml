@@ -1,0 +1,11 @@
+[package]
+name = "iron-core-business"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "iron_core_business"
+path = "src/lib.rs"
+
+[dependencies]
+iron-scheme-business = { path = "../../iron-protocol/iron-scheme-libs/iron-scheme-business" }

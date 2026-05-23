@@ -1,0 +1,53 @@
+namespace ironmesh.protocol.business.pdk;
+
+// ============================================================
+// iron-service-pdk 业务消息
+// ============================================================
+//
+// 跑得快服务当前只定义开始游戏与出牌的最小协议模型。
+// cards 使用牌 ID 列表，具体牌型校验不属于协议模型层。
+//
+
+// iron-service-pdk 最小返回码。
+enum IronPdkErrorCode : int {
+  Ok = 0,
+  Failed = 1,
+  InvalidParam = 2,
+  Unauthorized = 3
+}
+
+// 开始跑得快请求。
+table IronPdkStartReq {
+}
+
+// 开始跑得快响应。
+table IronPdkStartResp {
+  code: IronPdkErrorCode = Ok;
+  room_id: ulong = 0;
+}
+
+// 出牌请求。
+table IronPdkPlayCardReq {
+  room_id: ulong = 0;
+  cards: [ubyte];
+}
+
+// 出牌响应。
+table IronPdkPlayCardResp {
+  code: IronPdkErrorCode = Ok;
+  room_id: ulong = 0;
+  next_player_user_id: ulong = 0;
+}
+
+// pdk 服务内消息联合体。
+union IronPdkPayload {
+  IronPdkStartReq,
+  IronPdkStartResp,
+  IronPdkPlayCardReq,
+  IronPdkPlayCardResp
+}
+
+// pdk 服务级包装对象，用于顶层 IronBusinessServicePayload 分层。
+table IronPdkMessage {
+  payload: IronPdkPayload;
+}

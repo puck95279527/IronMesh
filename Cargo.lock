@@ -19,6 +19,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron-core-business"
+version = "0.1.0"
+dependencies = [
+ "iron-scheme-business",
+]
+
+[[package]]
+name = "iron-core-cluster"
+version = "0.1.0"
+dependencies = [
+ "iron-scheme-cluster",
+]
+
+[[package]]
+name = "iron-scheme-business"
+version = "0.1.0"
+dependencies = [
+ "flatbuffers",
+]
+
+[[package]]
 name = "iron-scheme-cluster"
 version = "0.1.0"
 dependencies = [

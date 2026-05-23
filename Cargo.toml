@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
+    "iron-core/iron-core-business",
+    "iron-core/iron-core-cluster",
+    "iron-protocol/iron-scheme-libs/iron-scheme-business",
     "iron-protocol/iron-scheme-libs/iron-scheme-cluster",
 ]
 

@@ -1,0 +1,39 @@
+include "auth.fbs";
+include "ddz.fbs";
+include "pdk.fbs";
+
+namespace ironmesh.protocol.business;
+
+// ============================================================
+// 业务协议公共容器
+// ============================================================
+//
+// 本文件是业务层 FlatBuffers 的唯一入口文件。
+// 这里只定义跨服务容器，不定义具体业务消息。
+//
+
+// ============================================================
+// 服务级业务消息
+// ============================================================
+//
+// 顶层只区分服务，不直接把所有业务请求/响应铺成一个大 union。
+// 这样服务数量和单个服务内部消息数量可以分别演进。
+//
+union IronBusinessServicePayload {
+  auth.IronAuthMessage,
+  ddz.IronDdzMessage,
+  pdk.IronPdkMessage
+}
+
+// ============================================================
+// FlatBuffers 业务体根对象
+// ============================================================
+//
+// IronBusinessBody 是 FixedHeader 后面的 FbsBody。
+// FixedHeader 不在 FlatBuffers 中定义；它属于传输帧模型。
+//
+table IronBusinessBody {
+  payload: IronBusinessServicePayload;
+}
+
+root_type IronBusinessBody;

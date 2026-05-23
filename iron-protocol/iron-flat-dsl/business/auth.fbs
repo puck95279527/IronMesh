@@ -1,0 +1,53 @@
+namespace ironmesh.protocol.business.auth;
+
+// ============================================================
+// iron-service-auth 业务消息
+// ============================================================
+//
+// 登录注册服务只保留最小请求与响应模型。
+// 用户身份上下文不由客户端在业务体中声明，后续由网关通过 FixedHeader
+// 的 actor_user_id 注入到内部转发帧。
+//
+
+// iron-service-auth 最小返回码。
+enum IronAuthErrorCode : int {
+  Ok = 0,
+  Failed = 1,
+  InvalidParam = 2,
+  Unauthorized = 3
+}
+
+// 客户端登录请求。
+table IronAuthLoginReq {
+  account: string;
+  password: string;
+}
+
+// 登录响应。
+table IronAuthLoginResp {
+  code: IronAuthErrorCode = Ok;
+}
+
+// 客户端注册请求。
+table IronAuthRegisterReq {
+  account: string;
+  password: string;
+}
+
+// 注册响应。
+table IronAuthRegisterResp {
+  code: IronAuthErrorCode = Ok;
+}
+
+// auth 服务内消息联合体。
+union IronAuthPayload {
+  IronAuthLoginReq,
+  IronAuthLoginResp,
+  IronAuthRegisterReq,
+  IronAuthRegisterResp
+}
+
+// auth 服务级包装对象，用于顶层 IronBusinessServicePayload 分层。
+table IronAuthMessage {
+  payload: IronAuthPayload;
+}
