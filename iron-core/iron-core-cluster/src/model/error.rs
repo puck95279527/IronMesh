@@ -20,9 +20,9 @@ pub enum IronClusterError {
     // TOML 配置解析错误。
     #[error("集群 TOML 配置解析错误: {0}")]
     Toml(#[from] toml::de::Error),
-    // HTTP 客户端请求错误。
-    #[error("集群 HTTP 请求错误: {0}")]
-    Reqwest(#[from] reqwest::Error),
+    // JSON 编解码错误。
+    #[error("集群 JSON 编解码错误: {0}")]
+    SerdeJson(#[from] serde_json::Error),
     // 网络监听地址解析错误。
     #[error("集群监听地址解析错误: {0}")]
     AddrParse(#[from] std::net::AddrParseError),
@@ -47,11 +47,14 @@ pub enum IronClusterError {
     // 运行目录无法从构建输出目录推导。
     #[error("无法从构建输出目录推导服务运行目录: {0}")]
     RuntimeDirNotFound(PathBuf),
-    // 种子节点地址无法转换成监听地址。
-    #[error("种子节点 HTTP 地址无效: {http_url}")]
-    InvalidPeerUrl {
-        http_url: String, // 无法解析的种子节点 HTTP 地址。
+    // TCP 帧类型无法识别。
+    #[error("集群 TCP 帧类型无效: {kind}")]
+    InvalidFrameKind {
+        kind: u16, // 无法识别的 TCP 帧类型编码。
     },
+    // TCP 协议消息不符合预期。
+    #[error("集群 TCP 协议错误: {0}")]
+    Protocol(String),
     // 数字环境变量无法解析。
     #[error("集群数字环境变量无效: {name}={value}")]
     InvalidNumberEnv {

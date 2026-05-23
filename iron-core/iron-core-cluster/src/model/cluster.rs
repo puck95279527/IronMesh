@@ -1,13 +1,12 @@
 // 集群注册发现数据模型。
 
 use super::IronClusterError;
+use super::IronRaft;
+use super::IronRaftStore;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-
-use super::IronRaft;
-use super::IronRaftStore;
 
 // 集群节点角色。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -44,7 +43,7 @@ pub enum IronClusterServiceKind {
 
 impl IronClusterServiceKind {
     // 返回服务名称。
-    pub(crate) fn service_name(self) -> &'static str {
+    pub fn service_name(self) -> &'static str {
         match self {
             Self::Gateway => "iron-gateway",
             Self::Auth => "iron-service-auth",
@@ -54,7 +53,7 @@ impl IronClusterServiceKind {
     }
 
     // 返回默认节点标识。
-    pub(crate) fn default_node_id(self) -> &'static str {
+    pub fn default_node_id(self) -> &'static str {
         match self {
             Self::Gateway => "iron-gateway-1",
             Self::Auth => "iron-service-auth-1",
@@ -63,18 +62,8 @@ impl IronClusterServiceKind {
         }
     }
 
-    // 返回默认 Raft 节点 ID。
-    pub(crate) fn default_raft_node_id(self) -> u64 {
-        match self {
-            Self::Gateway => 1,
-            Self::Auth => 2,
-            Self::Ddz => 3,
-            Self::Pdk => 4,
-        }
-    }
-
     // 返回默认节点角色。
-    pub(crate) fn node_role(self) -> IronClusterNodeRole {
+    pub fn node_role(self) -> IronClusterNodeRole {
         match self {
             Self::Gateway => IronClusterNodeRole::Gateway,
             Self::Auth | Self::Ddz | Self::Pdk => IronClusterNodeRole::Business,
@@ -85,7 +74,8 @@ impl IronClusterServiceKind {
 // 集群种子节点配置。
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IronClusterSeedConfig {
-    pub peers: Vec<IronClusterPeer>, // TOML 中的 Raft 种子节点列表。
+    pub registry_nodes: Vec<IronClusterRegistryNodeConfig>, // TOML 中的注册中心种子节点列表。
+    pub debug_http: IronClusterDebugHttpConfig,             // 注册中心验证 HTTP 配置。
 }
 
 impl IronClusterSeedConfig {
@@ -96,42 +86,52 @@ impl IronClusterSeedConfig {
     }
 }
 
-// 集群种子节点。
+// 集群注册中心种子节点配置。
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct IronClusterPeer {
-    pub raft_node_id: u64, // 对端 Raft 节点 ID。
-    pub node_id: String,   // 对端 IronMesh 节点 ID。
-    pub http_url: String,  // 对端控制面 HTTP 地址。
+pub struct IronClusterRegistryNodeConfig {
+    pub raft_node_id: u64, // 注册中心 Raft 节点 ID。
+    pub tcp_addr: String,  // 注册中心 TCP 监听地址。
 }
 
-// 集群启动配置。
+// 注册中心验证 HTTP 配置。
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IronClusterDebugHttpConfig {
+    pub http_addr: String, // 验证查询 HTTP 监听地址。
+}
+
+// 注册中心启动配置。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IronClusterConfig {
-    pub cluster_id: String,             // 集群 ID。
-    pub raft_node_id: u64,              // 当前 Raft 节点 ID。
-    pub node_id: String,                // 当前 IronMesh 节点 ID。
-    pub node_role: IronClusterNodeRole, // 当前节点角色。
-    pub service_name: String,           // 当前服务名称。
-    pub http_addr: String,              // 当前控制面监听地址。
-    pub cluster_token: String,          // 集群内部共享密钥。
-    pub peers: Vec<IronClusterPeer>,    // 从本地 TOML 读取的种子节点。
+pub struct IronClusterRegistryConfig {
+    pub cluster_id: String,                                 // 集群 ID。
+    pub cluster_token: String,                              // 集群内部共享密钥。
+    pub registry_nodes: Vec<IronClusterRegistryNodeConfig>, // 注册中心 Raft 节点列表。
+    pub debug_http_addr: String,                            // 验证查询 HTTP 监听地址。
 }
 
-// 集群运行时。
-#[derive(Clone)]
-pub(crate) struct IronClusterRuntime {
-    pub(crate) config: IronClusterConfig,    // 当前节点启动配置。
-    pub(crate) raft: IronRaft,               // 当前节点 Raft 句柄。
-    pub(crate) store: IronRaftStore,         // 当前节点 Raft 内存存储。
-    pub(crate) http_client: reqwest::Client, // 集群控制面 HTTP 客户端。
+// 工作节点启动配置。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IronClusterWorkerConfig {
+    pub cluster_id: String,                                 // 集群 ID。
+    pub cluster_token: String,                              // 集群内部共享密钥。
+    pub node_id: String,                                    // 当前工作节点 ID。
+    pub node_role: IronClusterNodeRole,                     // 当前工作节点角色。
+    pub service_name: String,                               // 当前服务名称。
+    pub registry_nodes: Vec<IronClusterRegistryNodeConfig>, // 注册中心种子节点列表。
 }
 
-// 集群 HTTP 共享状态。
+// 注册中心运行节点。
 #[derive(Clone)]
-pub(crate) struct IronClusterHttpState {
-    pub(crate) cluster_token: String, // 集群内部共享密钥。
-    pub(crate) raft: IronRaft,        // 当前节点 Raft 句柄。
-    pub(crate) store: IronRaftStore,  // 当前节点 Raft 内存存储。
+pub(crate) struct IronClusterRegistryRuntimeNode {
+    pub(crate) raft_node_id: u64,    // 当前 Raft 节点 ID。
+    pub(crate) tcp_addr: String,     // 当前 TCP 监听地址。
+    pub(crate) raft: IronRaft,       // 当前节点 Raft 句柄。
+    pub(crate) store: IronRaftStore, // 当前节点 Raft 存储。
+}
+
+// 注册中心验证 HTTP 共享状态。
+#[derive(Clone)]
+pub(crate) struct IronRegistryDebugHttpState {
+    pub(crate) nodes: Vec<IronClusterRegistryRuntimeNode>, // 注册中心运行节点列表。
 }
 
 // 集群服务端点记录。

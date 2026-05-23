@@ -79,14 +79,12 @@ pub struct IronRaftSnapshotData {
 // IronMesh 集群 Raft 网络工厂。
 #[derive(Clone)]
 pub struct IronRaftNetworkFactory {
-    pub cluster_token: String,        // 集群内部共享密钥。
-    pub http_client: reqwest::Client, // Raft RPC HTTP 客户端。
+    pub cluster_token: String, // 集群内部共享密钥。
 }
 
 // IronMesh 集群 Raft 单节点网络客户端。
 pub struct IronRaftNetwork {
-    pub target: u64,                  // 目标 Raft 节点 ID。
-    pub target_node: BasicNode,       // 目标 Raft 节点网络信息。
-    pub cluster_token: String,        // 集群内部共享密钥。
-    pub http_client: reqwest::Client, // Raft RPC HTTP 客户端。
+    pub target: u64,            // 目标 Raft 节点 ID。
+    pub target_node: BasicNode, // 目标 Raft 节点网络信息。
+    pub cluster_token: String,  // 集群内部共享密钥。
 }

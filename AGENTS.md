@@ -18,9 +18,10 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - `iron-business/iron-service-auth/`：登录注册服务。进入实现阶段后，它应该是一个独立二进制 crate。
 - `iron-business/iron-service-ddz/`：斗地主服务。进入实现阶段后，它应该是一个独立二进制 crate。
 - `iron-business/iron-service-pdk/`：跑得快服务。进入实现阶段后，它应该是一个独立二进制 crate。
+- `iron-business/iron-service-registry/`：集群注册发现与选举种子服务。它只作为启动壳，具体逻辑必须放在 `iron-core/iron-core-cluster/`。
 - `iron-core/`：核心基础设施父目录，不绑定任何具体业务系统。
 - `iron-core/iron-core-business/`：业务通信核心模型和业务协议导出。
-- `iron-core/iron-core-cluster/`：集群通信核心、服务注册发现、集群控制面和集群协议导出。
+- `iron-core/iron-core-cluster/`：集群通信核心、TCP 服务注册发现、Raft 选举、验证查询接口和集群协议导出。
 - `iron-protocol/`：协议设计、DSL、FlatBuffers schema、数据模型。
 - `iron-protocol/iron-flat-dsl/cluster/`：集群之间的基础协议。
 - `iron-protocol/iron-flat-dsl/business/`：集群业务协议。
@@ -33,6 +34,7 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 
 - 具体业务逻辑只放在 `iron-business/*` 下。
 - 网络连接、连接池、路由抽象、运行时辅助、编解码框架代码放在 `iron-core/*` 下。
+- 集群内部服务注册、服务发现、健康感知和 Raft 通信必须优先使用 TCP；HTTP 只能作为人工验证查询入口。
 - 协议结构、schema、数据模型、协议 DSL 定义放在 `iron-protocol/*` 下。
 - 错误、配置辅助、日志初始化、时间工具、ID 工具、通用工具放在 `iron-common/*` 下。
 - 不要把业务逻辑放进 `iron-core` 或 `iron-common`。

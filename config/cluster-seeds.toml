@@ -1,20 +1,15 @@
-# 集群种子节点配置。
-[[peers]]
+# 集群注册中心种子节点配置。
+[[registry_nodes]]
 raft_node_id = 1
-node_id = "iron-gateway-1"
-http_url = "http://127.0.0.1:7101"
+tcp_addr = "127.0.0.1:6001"
 
-[[peers]]
+[[registry_nodes]]
 raft_node_id = 2
-node_id = "iron-service-auth-1"
-http_url = "http://127.0.0.1:7102"
+tcp_addr = "127.0.0.1:6002"
 
-[[peers]]
+[[registry_nodes]]
 raft_node_id = 3
-node_id = "iron-service-ddz-1"
-http_url = "http://127.0.0.1:7103"
+tcp_addr = "127.0.0.1:6003"
 
-[[peers]]
-raft_node_id = 4
-node_id = "iron-service-pdk-1"
-http_url = "http://127.0.0.1:7104"
+[debug_http]
+http_addr = "127.0.0.1:8888"

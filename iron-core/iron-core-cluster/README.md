@@ -2,10 +2,10 @@
 
 | 类型 | 成员 | 作用 |
 |---|---|---|
-| `IronClusterError` | `Io` | 文件或网络监听错误。 |
+| `IronClusterError` | `Io` | 文件或网络 IO 错误。 |
 | `IronClusterError` | `EnvVar` | 环境变量读取错误。 |
 | `IronClusterError` | `Toml` | TOML 配置解析错误。 |
-| `IronClusterError` | `Reqwest` | HTTP 客户端请求错误。 |
+| `IronClusterError` | `SerdeJson` | JSON 编解码错误。 |
 | `IronClusterError` | `AddrParse` | 网络监听地址解析错误。 |
 | `IronClusterError` | `RaftConfig` | OpenRaft 配置错误。 |
 | `IronClusterError` | `RaftFatal` | OpenRaft 致命错误。 |
@@ -14,7 +14,8 @@
 | `IronClusterError` | `RaftRead` | OpenRaft 线性读错误。 |
 | `IronClusterError` | `SeedConfigNotFound` | 种子配置文件未找到。 |
 | `IronClusterError` | `RuntimeDirNotFound` | 运行目录无法从构建输出目录推导。 |
-| `IronClusterError` | `InvalidPeerUrl` | 种子节点地址无法转换成监听地址。 |
+| `IronClusterError` | `InvalidFrameKind` | TCP 帧类型无法识别。 |
+| `IronClusterError` | `Protocol` | TCP 协议消息不符合预期。 |
 | `IronClusterError` | `InvalidNumberEnv` | 数字环境变量无法解析。 |
 
 ## IronClusterNodeRole
@@ -54,43 +55,56 @@
 
 | 类型 | 字段 | 作用 |
 |---|---|---|
-| `IronClusterSeedConfig` | `peers` | TOML 中的 Raft 种子节点列表。 |
+| `IronClusterSeedConfig` | `registry_nodes` | TOML 中的注册中心种子节点列表。 |
+| `IronClusterSeedConfig` | `debug_http` | 注册中心验证 HTTP 配置。 |
 
-## IronClusterPeer
-
-| 类型 | 字段 | 作用 |
-|---|---|---|
-| `IronClusterPeer` | `raft_node_id` | 对端 Raft 节点 ID。 |
-| `IronClusterPeer` | `node_id` | 对端 IronMesh 节点 ID。 |
-| `IronClusterPeer` | `http_url` | 对端控制面 HTTP 地址。 |
-
-## IronClusterConfig
+## IronClusterRegistryNodeConfig
 
 | 类型 | 字段 | 作用 |
 |---|---|---|
-| `IronClusterConfig` | `cluster_id` | 集群 ID。 |
-| `IronClusterConfig` | `raft_node_id` | 当前 Raft 节点 ID。 |
-| `IronClusterConfig` | `node_id` | 当前 IronMesh 节点 ID。 |
-| `IronClusterConfig` | `node_role` | 当前节点角色。 |
-| `IronClusterConfig` | `service_name` | 当前服务名称。 |
-| `IronClusterConfig` | `http_addr` | 当前控制面监听地址。 |
-| `IronClusterConfig` | `cluster_token` | 集群内部共享密钥。 |
-| `IronClusterConfig` | `peers` | 从本地 TOML 读取的种子节点。 |
+| `IronClusterRegistryNodeConfig` | `raft_node_id` | 注册中心 Raft 节点 ID。 |
+| `IronClusterRegistryNodeConfig` | `tcp_addr` | 注册中心 TCP 监听地址。 |
 
-## IronClusterRuntime
+## IronClusterDebugHttpConfig
 
 | 类型 | 字段 | 作用 |
 |---|---|---|
-| `IronClusterRuntime` | `config` | 当前节点启动配置。 |
-| `IronClusterRuntime` | `registry` | 当前节点本地注册表。 |
-| `IronClusterRuntime` | `http_client` | 集群控制面 HTTP 客户端。 |
+| `IronClusterDebugHttpConfig` | `http_addr` | 验证查询 HTTP 监听地址。 |
 
-## IronClusterHttpState
+## IronClusterRegistryConfig
 
 | 类型 | 字段 | 作用 |
 |---|---|---|
-| `IronClusterHttpState` | `cluster_token` | 集群内部共享密钥。 |
-| `IronClusterHttpState` | `registry` | 当前节点本地注册表。 |
+| `IronClusterRegistryConfig` | `cluster_id` | 集群 ID。 |
+| `IronClusterRegistryConfig` | `cluster_token` | 集群内部共享密钥。 |
+| `IronClusterRegistryConfig` | `registry_nodes` | 注册中心 Raft 节点列表。 |
+| `IronClusterRegistryConfig` | `debug_http_addr` | 验证查询 HTTP 监听地址。 |
+
+## IronClusterWorkerConfig
+
+| 类型 | 字段 | 作用 |
+|---|---|---|
+| `IronClusterWorkerConfig` | `cluster_id` | 集群 ID。 |
+| `IronClusterWorkerConfig` | `cluster_token` | 集群内部共享密钥。 |
+| `IronClusterWorkerConfig` | `node_id` | 当前工作节点 ID。 |
+| `IronClusterWorkerConfig` | `node_role` | 当前工作节点角色。 |
+| `IronClusterWorkerConfig` | `service_name` | 当前服务名称。 |
+| `IronClusterWorkerConfig` | `registry_nodes` | 注册中心种子节点列表。 |
+
+## IronClusterRegistryRuntimeNode
+
+| 类型 | 字段 | 作用 |
+|---|---|---|
+| `IronClusterRegistryRuntimeNode` | `raft_node_id` | 当前 Raft 节点 ID。 |
+| `IronClusterRegistryRuntimeNode` | `tcp_addr` | 当前 TCP 监听地址。 |
+| `IronClusterRegistryRuntimeNode` | `raft` | 当前节点 Raft 句柄。 |
+| `IronClusterRegistryRuntimeNode` | `store` | 当前节点 Raft 存储。 |
+
+## IronRegistryDebugHttpState
+
+| 类型 | 字段 | 作用 |
+|---|---|---|
+| `IronRegistryDebugHttpState` | `nodes` | 注册中心运行节点列表。 |
 
 ## IronClusterEndpointRecord
 
@@ -130,6 +144,24 @@
 | 类型 | 字段 | 作用 |
 |---|---|---|
 | `IronClusterCommandResult` | `metadata_version` | 注册表元数据版本。 |
+
+## IronClusterFrameKind
+
+| 类型 | 成员 | 作用 |
+|---|---|---|
+| `IronClusterFrameKind` | `RegisterService` | 工作节点注册服务。 |
+| `IronClusterFrameKind` | `Heartbeat` | 工作节点心跳。 |
+| `IronClusterFrameKind` | `UnregisterService` | 工作节点下线服务。 |
+| `IronClusterFrameKind` | `RaftAppend` | Raft 日志复制请求。 |
+| `IronClusterFrameKind` | `RaftVote` | Raft 投票请求。 |
+| `IronClusterFrameKind` | `Error` | 协议错误响应。 |
+
+## IronClusterFrameHeader
+
+| 类型 | 字段 | 作用 |
+|---|---|---|
+| `IronClusterFrameHeader` | `kind` | TCP 帧类型。 |
+| `IronClusterFrameHeader` | `body_len` | TCP 帧 body 字节长度。 |
 
 ## IronRaftTypeConfig
 
@@ -174,7 +206,6 @@
 | 类型 | 字段 | 作用 |
 |---|---|---|
 | `IronRaftNetworkFactory` | `cluster_token` | 集群内部共享密钥。 |
-| `IronRaftNetworkFactory` | `http_client` | Raft RPC HTTP 客户端。 |
 
 ## IronRaftNetwork
 
@@ -183,16 +214,13 @@
 | `IronRaftNetwork` | `target` | 目标 Raft 节点 ID。 |
 | `IronRaftNetwork` | `target_node` | 目标 Raft 节点网络信息。 |
 | `IronRaftNetwork` | `cluster_token` | 集群内部共享密钥。 |
-| `IronRaftNetwork` | `http_client` | Raft RPC HTTP 客户端。 |
 
 ## API
 
 | API | 参数 | 返回值 | 作用 |
 |---|---|---|---|
-| `run_cluster_service_from_local_toml` | `service_kind: IronClusterServiceKind` | `Result<(), IronClusterError>` | 启动指定服务，并从可执行文件旁边读取集群种子 TOML。 |
+| `run_registry_cluster_from_local_toml` | 无 | `Result<(), IronClusterError>` | 启动注册中心，并从可执行文件旁边读取集群种子 TOML。 |
+| `run_worker_from_local_toml` | `service_kind: IronClusterServiceKind` | `Result<(), IronClusterError>` | 启动工作节点，并从可执行文件旁边读取集群种子 TOML。 |
 | `copy_cluster_seed_config_to_runtime_dir` | 无 | `Result<(), IronClusterError>` | 复制集群种子配置到服务运行目录。 |
-| `GET /iron/cluster/health` | 无 | `ok` | 集群控制面健康检查。 |
-| `GET /iron/cluster/services` | `x-iron-cluster-token` | `IronClusterRegistry` | 查询当前节点已应用的服务注册表。 |
-| `POST /iron/cluster/register` | `x-iron-cluster-token`、`IronClusterServiceRecord` | `IronClusterRegistry` | 通过 Raft 写入服务注册记录。 |
-| `POST /iron/cluster/raft/append` | `x-iron-cluster-token`、`AppendEntriesRequest<IronRaftTypeConfig>` | `AppendEntriesResponse<u64>` | 接收 OpenRaft 日志复制请求。 |
-| `POST /iron/cluster/raft/vote` | `x-iron-cluster-token`、`VoteRequest<u64>` | `VoteResponse<u64>` | 接收 OpenRaft 投票请求。 |
+| `GET /iron/cluster/health` | 无 | `ok` | 注册中心验证 HTTP 健康检查。 |
+| `GET /iron/cluster/services` | 无 | `IronClusterRegistry` | 查询注册中心当前可见服务注册表。 |

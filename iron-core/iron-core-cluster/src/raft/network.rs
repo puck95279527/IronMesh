@@ -1,6 +1,7 @@
-// 集群 Raft HTTP 网络实现。
+// 集群 Raft TCP 网络实现。
 
-use crate::http::IRON_CLUSTER_TOKEN_HEADER;
+use crate::model::IronClusterError;
+use crate::model::IronClusterFrameKind;
 use crate::model::IronRaftNetwork;
 use crate::model::IronRaftNetworkFactory;
 use crate::model::IronRaftSnapshot;
@@ -22,6 +23,7 @@ use openraft::raft::SnapshotResponse;
 use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
 use std::future::Future;
+use tokio::net::TcpStream;
 
 impl RaftNetworkFactory<IronRaftTypeConfig> for IronRaftNetworkFactory {
     type Network = IronRaftNetwork;
@@ -32,7 +34,6 @@ impl RaftNetworkFactory<IronRaftTypeConfig> for IronRaftNetworkFactory {
             target,
             target_node: node.clone(),
             cluster_token: self.cluster_token.clone(),
-            http_client: self.http_client.clone(),
         }
     }
 }
@@ -44,7 +45,7 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftNetwork {
         rpc: AppendEntriesRequest<IronRaftTypeConfig>,
         _option: RPCOption,
     ) -> Result<AppendEntriesResponse<u64>, RPCError<u64, BasicNode, RaftError<u64>>> {
-        self.post_json("append", &rpc).await
+        self.send_json(IronClusterFrameKind::RaftAppend, &rpc).await
     }
 
     // 发送 Raft RequestVote RPC。
@@ -53,7 +54,7 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftNetwork {
         rpc: VoteRequest<u64>,
         _option: RPCOption,
     ) -> Result<VoteResponse<u64>, RPCError<u64, BasicNode, RaftError<u64>>> {
-        self.post_json("vote", &rpc).await
+        self.send_json(IronClusterFrameKind::RaftVote, &rpc).await
     }
 
     // 发送 Raft 完整快照 RPC。
@@ -71,34 +72,31 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftNetwork {
 }
 
 impl IronRaftNetwork {
-    // 向目标节点发送 JSON RPC。
-    async fn post_json<TReq, TResp>(
+    // 向目标节点发送 TCP JSON RPC。
+    async fn send_json<TReq, TResp>(
         &self,
-        action: &str,
+        kind: IronClusterFrameKind,
         request: &TReq,
     ) -> Result<TResp, RPCError<u64, BasicNode, RaftError<u64>>>
     where
         TReq: serde::Serialize + ?Sized,
         TResp: for<'de> serde::Deserialize<'de>,
     {
-        let url = format!(
-            "{}/iron/cluster/raft/{action}",
-            self.target_node.addr.trim_end_matches('/')
-        );
-        let response = self
-            .http_client
-            .post(url)
-            .header(IRON_CLUSTER_TOKEN_HEADER, &self.cluster_token)
-            .json(request)
-            .send()
-            .await
-            .map_err(|error| RPCError::Unreachable(Unreachable::new(&error)))?
-            .error_for_status()
-            .map_err(|error| RPCError::Unreachable(Unreachable::new(&error)))?
-            .json::<TResp>()
+        let mut stream = TcpStream::connect(&self.target_node.addr)
             .await
             .map_err(|error| RPCError::Unreachable(Unreachable::new(&error)))?;
+        crate::tcp::write_json_frame(&mut stream, kind, request)
+            .await
+            .map_err(raft_tcp_error)?;
+        let (_, response) = crate::tcp::read_json_frame::<_, TResp>(&mut stream)
+            .await
+            .map_err(raft_tcp_error)?;
 
         Ok(response)
     }
+}
+
+// 转换 Raft TCP 网络错误。
+fn raft_tcp_error(error: IronClusterError) -> RPCError<u64, BasicNode, RaftError<u64>> {
+    RPCError::Unreachable(Unreachable::new(&error))
 }

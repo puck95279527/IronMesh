@@ -5,6 +5,7 @@ members = [
     "iron-business/iron-service-auth",
     "iron-business/iron-service-ddz",
     "iron-business/iron-service-pdk",
+    "iron-business/iron-service-registry",
     "iron-core/iron-core-business",
     "iron-core/iron-core-cluster",
     "iron-protocol/iron-scheme-libs/iron-scheme-business",
@@ -20,11 +21,10 @@ edition = "2024"
 axum = "0.8"
 flatbuffers = "=25.12.19"
 openraft = { version = "=0.9.24", features = ["generic-snapshot-data", "serde", "storage-v2"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "1.1.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

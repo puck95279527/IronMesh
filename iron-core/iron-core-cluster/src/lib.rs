@@ -8,6 +8,7 @@ mod http;
 pub mod model;
 mod raft;
 mod runtime;
+mod tcp;
 
 // 集群 FlatBuffers 协议导出模块。
 pub mod scheme {
