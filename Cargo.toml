@@ -7,6 +7,18 @@ members = [
     "iron-protocol/iron-scheme-libs/iron-scheme-cluster",
 ]
 
-# Add workspace members only after each crate directory has its own Cargo.toml.
-# Expected first members:
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+# 第三方依赖。
+flatbuffers = "=25.12.19"
+
+# workspace 内部 crate。
+iron-scheme-business = { path = "iron-protocol/iron-scheme-libs/iron-scheme-business" }
+iron-scheme-cluster = { path = "iron-protocol/iron-scheme-libs/iron-scheme-cluster" }
+
+# 只有目录已经拥有自己的 Cargo.toml 后，才加入 workspace members。
+# 后续预期成员：
 # - iron-gateway

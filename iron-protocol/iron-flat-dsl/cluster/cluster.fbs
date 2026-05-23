@@ -1,47 +1,56 @@
+// 集群基础协议命名空间。
 namespace ironmesh.protocol.cluster;
 
+// 集群节点角色。
 enum IronClusterNodeRole : ubyte {
-  Gateway = 0,
-  Business = 1,
-  Control = 2
+  Gateway = 0, // 网关节点。
+  Business = 1, // 业务节点。
+  Control = 2 // 控制节点。
 }
 
+// 集群对象状态。
 enum IronClusterState : ubyte {
-  Unknown = 0,
-  Starting = 1,
-  Healthy = 2,
-  Offline = 3
+  Unknown = 0, // 状态未知。
+  Starting = 1, // 启动中。
+  Healthy = 2, // 健康。
+  Offline = 3 // 离线。
 }
 
+// 集群连接端点协议类型。
 enum IronClusterEndpointProtocol : ubyte {
-  Tcp = 0,
-  Http = 1
+  Tcp = 0, // TCP 协议。
+  Http = 1 // HTTP 协议。
 }
 
+// 集群服务连接端点。
 table IronClusterEndpoint {
-  name: string;
-  protocol: IronClusterEndpointProtocol;
-  host: string;
-  port: ushort;
+  name: string; // 连接名称，例如 cluster-tcp。
+  protocol: IronClusterEndpointProtocol; // 连接协议。
+  host: string; // 连接地址。
+  port: ushort; // 连接端口。
 }
 
+// 集群服务实例。
 table IronClusterService {
-  service_name: string;
-  state: IronClusterState;
-  endpoints: [IronClusterEndpoint];
+  service_name: string; // 服务名称，例如 iron-service-ddz。
+  state: IronClusterState; // 服务状态。
+  endpoints: [IronClusterEndpoint]; // 服务连接地址列表。
 }
 
+// 集群服务器节点。
 table IronClusterNode {
-  node_id: string;
-  role: IronClusterNodeRole;
-  state: IronClusterState;
-  services: [IronClusterService];
+  node_id: string; // 节点唯一标识。
+  role: IronClusterNodeRole; // 节点角色。
+  state: IronClusterState; // 节点状态。
+  services: [IronClusterService]; // 节点上运行的服务列表。
 }
 
+// 集群快照。
 table IronClusterSnap {
-  cluster_id: string;
-  metadata_version: ulong;
-  nodes: [IronClusterNode];
+  cluster_id: string; // 集群唯一标识。
+  metadata_version: ulong; // 集群元数据版本号。
+  nodes: [IronClusterNode]; // 集群节点列表。
 }
 
+// 集群基础协议根类型。
 root_type IronClusterSnap;

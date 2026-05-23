@@ -1,11 +1,11 @@
 [package]
 name = "iron-scheme-business"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 name = "iron_scheme_business"
 path = "src/lib.rs"
 
 [dependencies]
-flatbuffers = "=25.12.19"
+flatbuffers.workspace = true

@@ -1,77 +1,75 @@
-//! Business transport frame model definitions.
-//!
-//! This module intentionally defines only the data model. It does not provide
-//! byte encoding, byte decoding, network I/O, routing, or validation logic.
+// 业务传输帧模型定义。
+//
+// 本模块只定义数据模型，不提供字节编解码、网络 I/O、路由或校验逻辑。
 
-/// Fixed business frame header length in bytes.
+// 固定业务帧头长度，单位为字节。
 pub const IRON_BUSINESS_FRAME_HEADER_LEN: usize = 24;
 
-/// Serialized business user id length in bytes.
+// 序列化后的业务用户 ID 长度，单位为字节。
 pub const IRON_BUSINESS_USER_ID_LEN: usize = 8;
 
-/// User id used by the gateway and business services.
+// 网关和业务服务共同使用的用户 ID 类型。
 pub type IronBusinessTargetUserId = u64;
 
-/// Business frame semantic type.
+// 业务帧语义类型。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum IronBusinessFrameKind {
-    None = 0,
-    Request = 1,
-    Response = 2,
-    Broadcast = 3,
+    None = 0,      // 未指定业务帧类型。
+    Request = 1,   // 客户端或内部服务发起请求。
+    Response = 2,  // 服务端返回请求响应。
+    Broadcast = 3, // 服务端主动广播消息。
 }
 
-/// Business broadcast routing scope.
+// 业务广播路由范围。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum IronBusinessBroadcastScope {
-    None = 0,
-    All = 1,
-    Users = 2,
+    None = 0,  // 非广播帧或未指定广播范围。
+    All = 1,   // 广播给全部目标用户。
+    Users = 2, // 广播给指定目标用户列表。
 }
 
-/// Fixed 24-byte business frame header semantic model.
-///
-/// The wire representation is little-endian and has this logical layout:
-///
-/// ```text
-/// body_len        u32
-/// kind            u8
-/// broadcast_scope u8
-/// target_count    u16
-/// request_id      u64
-/// actor_user_id   u64
-/// ```
-///
-/// This type is not a wire layout type. Do not transmute it or rely on its
-/// Rust memory layout for protocol encoding.
+// 固定 24 字节业务帧头语义模型。
+//
+// 线上的字节表示使用小端序，逻辑布局为：
+//
+// ```text
+// body_len        u32
+// kind            u8
+// broadcast_scope u8
+// target_count    u16
+// request_id      u64
+// actor_user_id   u64
+// ```
+//
+// 这个类型不是线上的内存布局类型，不要 transmute，也不要依赖 Rust 内存布局做协议编码。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IronBusinessFrameHeader {
-    pub body_len: u32,
-    pub kind: IronBusinessFrameKind,
-    pub broadcast_scope: IronBusinessBroadcastScope,
-    pub target_count: u16,
-    pub request_id: u64,
-    pub actor_user_id: u64,
+    pub body_len: u32,                               // 业务体字节长度。
+    pub kind: IronBusinessFrameKind,                 // 业务帧语义类型。
+    pub broadcast_scope: IronBusinessBroadcastScope, // 广播路由范围。
+    pub target_count: u16,                           // 指定目标用户数量。
+    pub request_id: u64,                             // 请求与响应关联 ID。
+    pub actor_user_id: u64,                          // 可信调用方用户 ID。
 }
 
-/// Business frame segment model.
-///
-/// Normal request, response, and broadcast-to-all frames are:
-///
-/// ```text
-/// [IronBusinessFrameHeader][FbsBody]
-/// ```
-///
-/// Broadcast-to-users frames are:
-///
-/// ```text
-/// [IronBusinessFrameHeader][IronBusinessTargetUserId...][FbsBody]
-/// ```
+// 业务帧分段模型。
+//
+// 普通请求、响应、全员广播帧：
+//
+// ```text
+// [IronBusinessFrameHeader][FbsBody]
+// ```
+//
+// 指定用户广播帧：
+//
+// ```text
+// [IronBusinessFrameHeader][IronBusinessTargetUserId...][FbsBody]
+// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IronBusinessFrame<TBody> {
-    pub header: IronBusinessFrameHeader,
-    pub target_user_ids: Vec<IronBusinessTargetUserId>,
-    pub body: TBody,
+    pub header: IronBusinessFrameHeader,                // 业务帧头。
+    pub target_user_ids: Vec<IronBusinessTargetUserId>, // 指定广播目标用户列表。
+    pub body: TBody,                                    // FlatBuffers 业务体或调用方指定的业务体。
 }

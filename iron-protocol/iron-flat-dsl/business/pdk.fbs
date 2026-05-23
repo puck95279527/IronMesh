@@ -1,3 +1,4 @@
+// 跑得快业务协议命名空间。
 namespace ironmesh.protocol.business.pdk;
 
 // ============================================================
@@ -10,10 +11,10 @@ namespace ironmesh.protocol.business.pdk;
 
 // iron-service-pdk 最小返回码。
 enum IronPdkErrorCode : int {
-  Ok = 0,
-  Failed = 1,
-  InvalidParam = 2,
-  Unauthorized = 3
+  Ok = 0, // 成功。
+  Failed = 1, // 通用失败。
+  InvalidParam = 2, // 请求参数无效。
+  Unauthorized = 3 // 未授权。
 }
 
 // 开始跑得快请求。
@@ -22,32 +23,32 @@ table IronPdkStartReq {
 
 // 开始跑得快响应。
 table IronPdkStartResp {
-  code: IronPdkErrorCode = Ok;
-  room_id: ulong = 0;
+  code: IronPdkErrorCode = Ok; // 开始游戏结果码。
+  room_id: ulong = 0; // 房间 ID。
 }
 
 // 出牌请求。
 table IronPdkPlayCardReq {
-  room_id: ulong = 0;
-  cards: [ubyte];
+  room_id: ulong = 0; // 房间 ID。
+  cards: [ubyte]; // 出牌列表。
 }
 
 // 出牌响应。
 table IronPdkPlayCardResp {
-  code: IronPdkErrorCode = Ok;
-  room_id: ulong = 0;
-  next_player_user_id: ulong = 0;
+  code: IronPdkErrorCode = Ok; // 出牌结果码。
+  room_id: ulong = 0; // 房间 ID。
+  next_player_user_id: ulong = 0; // 下一个出牌用户 ID。
 }
 
 // pdk 服务内消息联合体。
 union IronPdkPayload {
-  IronPdkStartReq,
-  IronPdkStartResp,
-  IronPdkPlayCardReq,
-  IronPdkPlayCardResp
+  IronPdkStartReq, // 开始游戏请求。
+  IronPdkStartResp, // 开始游戏响应。
+  IronPdkPlayCardReq, // 出牌请求。
+  IronPdkPlayCardResp // 出牌响应。
 }
 
 // pdk 服务级包装对象，用于顶层 IronBusinessServicePayload 分层。
 table IronPdkMessage {
-  payload: IronPdkPayload;
+  payload: IronPdkPayload; // pdk 服务内消息。
 }

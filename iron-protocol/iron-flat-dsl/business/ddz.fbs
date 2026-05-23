@@ -1,3 +1,4 @@
+// 斗地主业务协议命名空间。
 namespace ironmesh.protocol.business.ddz;
 
 // ============================================================
@@ -11,10 +12,10 @@ namespace ironmesh.protocol.business.ddz;
 
 // iron-service-ddz 最小返回码。
 enum IronDdzErrorCode : int {
-  Ok = 0,
-  Failed = 1,
-  InvalidParam = 2,
-  Unauthorized = 3
+  Ok = 0, // 成功。
+  Failed = 1, // 通用失败。
+  InvalidParam = 2, // 请求参数无效。
+  Unauthorized = 3 // 未授权。
 }
 
 // 开始斗地主请求。
@@ -23,32 +24,32 @@ table IronDdzStartReq {
 
 // 开始斗地主响应。
 table IronDdzStartResp {
-  code: IronDdzErrorCode = Ok;
-  room_id: ulong = 0;
+  code: IronDdzErrorCode = Ok; // 开始游戏结果码。
+  room_id: ulong = 0; // 房间 ID。
 }
 
 // 抢地主请求。
 table IronDdzGrabReq {
-  room_id: ulong = 0;
-  grab: bool = false;
+  room_id: ulong = 0; // 房间 ID。
+  grab: bool = false; // 是否抢地主。
 }
 
 // 抢地主结果响应或广播。
 table IronDdzGrabResp {
-  code: IronDdzErrorCode = Ok;
-  room_id: ulong = 0;
-  landlord_user_id: ulong = 0;
+  code: IronDdzErrorCode = Ok; // 抢地主结果码。
+  room_id: ulong = 0; // 房间 ID。
+  landlord_user_id: ulong = 0; // 地主用户 ID。
 }
 
 // ddz 服务内消息联合体。
 union IronDdzPayload {
-  IronDdzStartReq,
-  IronDdzStartResp,
-  IronDdzGrabReq,
-  IronDdzGrabResp
+  IronDdzStartReq, // 开始游戏请求。
+  IronDdzStartResp, // 开始游戏响应。
+  IronDdzGrabReq, // 抢地主请求。
+  IronDdzGrabResp // 抢地主响应或广播。
 }
 
 // ddz 服务级包装对象，用于顶层 IronBusinessServicePayload 分层。
 table IronDdzMessage {
-  payload: IronDdzPayload;
+  payload: IronDdzPayload; // ddz 服务内消息。
 }

@@ -1,3 +1,4 @@
+// 登录注册业务协议命名空间。
 namespace ironmesh.protocol.business.auth;
 
 // ============================================================
@@ -11,43 +12,43 @@ namespace ironmesh.protocol.business.auth;
 
 // iron-service-auth 最小返回码。
 enum IronAuthErrorCode : int {
-  Ok = 0,
-  Failed = 1,
-  InvalidParam = 2,
-  Unauthorized = 3
+  Ok = 0, // 成功。
+  Failed = 1, // 通用失败。
+  InvalidParam = 2, // 请求参数无效。
+  Unauthorized = 3 // 未授权。
 }
 
 // 客户端登录请求。
 table IronAuthLoginReq {
-  account: string;
-  password: string;
+  account: string; // 登录账号。
+  password: string; // 登录密码。
 }
 
 // 登录响应。
 table IronAuthLoginResp {
-  code: IronAuthErrorCode = Ok;
+  code: IronAuthErrorCode = Ok; // 登录结果码。
 }
 
 // 客户端注册请求。
 table IronAuthRegisterReq {
-  account: string;
-  password: string;
+  account: string; // 注册账号。
+  password: string; // 注册密码。
 }
 
 // 注册响应。
 table IronAuthRegisterResp {
-  code: IronAuthErrorCode = Ok;
+  code: IronAuthErrorCode = Ok; // 注册结果码。
 }
 
 // auth 服务内消息联合体。
 union IronAuthPayload {
-  IronAuthLoginReq,
-  IronAuthLoginResp,
-  IronAuthRegisterReq,
-  IronAuthRegisterResp
+  IronAuthLoginReq, // 登录请求。
+  IronAuthLoginResp, // 登录响应。
+  IronAuthRegisterReq, // 注册请求。
+  IronAuthRegisterResp // 注册响应。
 }
 
 // auth 服务级包装对象，用于顶层 IronBusinessServicePayload 分层。
 table IronAuthMessage {
-  payload: IronAuthPayload;
+  payload: IronAuthPayload; // auth 服务内消息。
 }
