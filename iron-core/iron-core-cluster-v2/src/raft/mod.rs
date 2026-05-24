@@ -4,13 +4,15 @@ use std::sync::Arc;
 use openraft::Config;
 use openraft::Raft;
 
-use crate::raft::model::iron_raft_log_store::IronRaftLogStore;
-use crate::raft::model::iron_raft_state_machine_store::IronRaftStateMachineStore;
+use crate::raft::core::iron_raft_log_store::IronRaftLogStore;
+use crate::raft::core::iron_raft_state_machine_store::IronRaftStateMachineStore;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
 use crate::raft::network::iron_raft_tcp_server::IronRaftTcpServer;
 
 // Raft 能力模块入口。
+pub mod core;
+pub mod dto;
 pub mod model;
 pub mod network;
 

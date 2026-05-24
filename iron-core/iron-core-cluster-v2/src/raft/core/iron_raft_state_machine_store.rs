@@ -13,7 +13,7 @@ use openraft::storage::RaftStateMachine;
 
 use crate::raft::model::iron_raft_request::IronRaftRequest;
 use crate::raft::model::iron_raft_stored_snapshot::IronRaftStoredSnapshot;
-use crate::raft::model::iron_raft_state_machine_data::IronRaftStateMachineData;
+use crate::raft::dto::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 
 // IronMesh Raft 最小状态机存储模型。
