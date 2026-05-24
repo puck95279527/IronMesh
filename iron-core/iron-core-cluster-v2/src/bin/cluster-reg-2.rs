@@ -10,9 +10,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     init_cluster_logging();
     let boot_nodes = BTreeMap::from([
-        (1, IronRaftBootNode::new(1, "127.0.0.1:5001")),
-        (2, IronRaftBootNode::new(2, "127.0.0.1:5002")),
-        (3, IronRaftBootNode::new(3, "127.0.0.1:5003")),
+        (
+            1,
+            IronRaftBootNode::new(1, "127.0.0.1:5001", Some("127.0.0.1:7101".to_string())),
+        ),
+        (
+            2,
+            IronRaftBootNode::new(2, "127.0.0.1:5002", Some("127.0.0.1:7102".to_string())),
+        ),
+        (
+            3,
+            IronRaftBootNode::new(3, "127.0.0.1:5003", Some("127.0.0.1:7103".to_string())),
+        ),
     ]);
     let cluster_manager = IronRaftClusterManager::new(
         IronRaftNode::new(2, "cluster-reg-2", "127.0.0.1:5002"),

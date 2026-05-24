@@ -18,6 +18,7 @@ use crate::logging::{
     peer_tag as peer_node_tag,
     self_tag as self_node_tag,
 };
+use crate::http::iron_raft_query::start_query_http_with_addr;
 use crate::raft::core::iron_raft_log_store::IronRaftLogStore;
 use crate::raft::core::iron_raft_state_machine_store::IronRaftStateMachineStore;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
@@ -50,6 +51,12 @@ impl IronRaftClusterManager {
     // 启动当前节点并跑起来。
     pub async fn run(self) -> Result<(), Box<dyn Error>> {
         let self_tag = self_node_tag(self.current_node.node_id, &self.current_node.node_name);
+        let node_id = self.current_node.node_id;
+        let node_name = self.current_node.node_name.clone();
+        let debug_http_addr = self
+            .boot_nodes
+            .get(&self.current_node.node_id)
+            .and_then(|node| node.http_debug_addr.clone());
 
         // 1. 校验当前节点和启动节点表。
         self.validate_topology()?;
@@ -61,10 +68,27 @@ impl IronRaftClusterManager {
 
         // 3. 启动当前节点的 Raft TCP 服务。
         let _server_task = tokio::spawn(async move {
-                if let Err(error) = tcp_server.serve(node_addr).await {
+            if let Err(error) = tcp_server.serve(node_addr).await {
                 tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
             }
         });
+
+        // 3.1 如果当前节点带有调试 HTTP 地址，就启动查询服务。
+        if let Some(http_debug_addr) = debug_http_addr {
+            let query_raft = raft.clone();
+            tokio::spawn(async move {
+                if let Err(error) = start_query_http_with_addr(
+                    node_id,
+                    node_name,
+                    http_debug_addr,
+                    query_raft,
+                )
+                .await
+                {
+                    tracing::warn!(%error, "[Iron] [cluster] Raft 调试 HTTP 服务退出");
+                }
+            });
+        }
 
         // 4. 尝试加入已有集群；如果没有已有集群，就争抢起盘资格。
         let bootstrap_owner = self.bootstrap_or_join_cluster(&raft).await?;

@@ -20,19 +20,33 @@ pub async fn start_query_http(
         return Ok(());
     }
 
+    let query_addr = format!("127.0.0.1:{query_port}");
+    start_query_http_with_addr(node_id, "unknown", query_addr, raft).await
+}
+
+// 启动 Raft 查询 HTTP 服务。
+pub async fn start_query_http_with_addr(
+    node_id: u64,
+    node_name: impl AsRef<str>,
+    query_addr: String,
+    raft: Raft<IronRaftTypeConfig>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if query_addr.is_empty() {
+        return Ok(());
+    }
+
     let router = Router::new()
         .route("/health", get(health_handler))
         .route("/raft/metrics", get(metrics_handler))
         .with_state(raft);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], query_port));
+    let addr = query_addr.parse::<SocketAddr>()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    let query_url = format!("http://127.0.0.1:{query_port}");
+    let query_url = format!("http://{addr}");
     let health_url = format!("{query_url}/health");
     let metrics_url = format!("{query_url}/raft/metrics");
-    let self_tag = self_node_tag(node_id, "unknown");
+    let self_tag = self_node_tag(node_id, node_name.as_ref());
 
-    tracing::info!(%self_tag, %query_url, "[Iron] [cluster] 启动 Raft 查询 HTTP 服务");
     tracing::info!(%self_tag, %health_url, "[Iron] [cluster] Raft 查询健康检查地址");
     tracing::info!(%self_tag, %metrics_url, "[Iron] [cluster] Raft 查询指标地址");
     axum::serve(listener, router).await?;
