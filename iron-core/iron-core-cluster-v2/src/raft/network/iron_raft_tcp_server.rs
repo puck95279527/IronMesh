@@ -7,10 +7,10 @@ use openraft::ChangeMembers;
 use openraft::CommittedLeaderId;
 use openraft::Membership;
 use openraft::Raft;
+use openraft::ServerState;
 use openraft::Snapshot;
 use openraft::SnapshotMeta;
 use openraft::StoredMembership;
-use openraft::ServerState;
 use openraft::Vote;
 
 use crate::raft::model::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
@@ -26,6 +26,7 @@ pub struct IronRaftTcpServer {
     pub raft: Raft<IronRaftTypeConfig>, // Raft 节点句柄。
 }
 
+// OpenRaft 标准协议相关实现。
 impl IronRaftTcpServer {
     // 创建 TCP 服务端。
     pub fn new(raft: Raft<IronRaftTypeConfig>) -> Self {
@@ -96,7 +97,8 @@ impl IronRaftTcpServer {
                     node_name,
                     node_addr,
                 } => {
-                    let result = Self::handle_join_node(raft.clone(), node_id, node_name, node_addr).await;
+                    let result =
+                        Self::handle_join_node(raft.clone(), node_id, node_name, node_addr).await;
                     IronRaftTcpRpcResponse::JoinNode(result)
                 }
             };
@@ -115,9 +117,18 @@ impl IronRaftTcpServer {
     }
 
     // 从快照元信息传输模型恢复 SnapshotMeta。
-    fn build_snapshot_meta(meta: &IronRaftFullSnapshotMeta) -> SnapshotMeta<u64, openraft::BasicNode> {
-        let last_log_id = match (meta.last_log_term, meta.last_log_node_id, meta.last_log_index) {
-            (Some(term), Some(node_id), Some(index)) => Some(openraft::LogId::new(CommittedLeaderId::new(term, node_id), index)),
+    fn build_snapshot_meta(
+        meta: &IronRaftFullSnapshotMeta,
+    ) -> SnapshotMeta<u64, openraft::BasicNode> {
+        let last_log_id = match (
+            meta.last_log_term,
+            meta.last_log_node_id,
+            meta.last_log_index,
+        ) {
+            (Some(term), Some(node_id), Some(index)) => Some(openraft::LogId::new(
+                CommittedLeaderId::new(term, node_id),
+                index,
+            )),
             _ => None,
         };
 
@@ -125,7 +136,12 @@ impl IronRaftTcpServer {
         let nodes = meta
             .membership
             .iter()
-            .map(|node_id| (*node_id, openraft::BasicNode::new(format!("127.0.0.1:500{node_id}"))))
+            .map(|node_id| {
+                (
+                    *node_id,
+                    openraft::BasicNode::new(format!("127.0.0.1:500{node_id}")),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         let membership = Membership::new(vec![voters], nodes);
         let stored_membership = StoredMembership::new(last_log_id.clone(), membership);
@@ -145,7 +161,10 @@ impl IronRaftTcpServer {
             vote_committed: vote.committed,
         }
     }
+}
 
+// IronMesh 自定义扩展协议相关实现。
+impl IronRaftTcpServer {
     // 处理节点加入请求。
     async fn handle_join_node(
         raft: Raft<IronRaftTypeConfig>,
@@ -161,7 +180,12 @@ impl IronRaftTcpServer {
             ));
         }
 
-        if metrics.membership_config.membership().get_node(&node_id).is_some() {
+        if metrics
+            .membership_config
+            .membership()
+            .get_node(&node_id)
+            .is_some()
+        {
             tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "节点已经在集群中");
             return Ok(());
         }

@@ -39,9 +39,12 @@ pub struct IronRaftTcpClient {
     pub cached_stream: Arc<Mutex<Option<tokio::net::TcpStream>>>, // 目标节点长连接缓存。
 }
 
+// OpenRaft 标准协议相关方法。
 impl IronRaftTcpClient {
     // 创建网络错误。
-    fn network_error(error: &(impl std::error::Error + 'static)) -> RPCError<u64, openraft::BasicNode, RaftError<u64>> {
+    fn network_error(
+        error: &(impl std::error::Error + 'static),
+    ) -> RPCError<u64, openraft::BasicNode, RaftError<u64>> {
         RPCError::Network(NetworkError::new(error))
     }
 
@@ -53,7 +56,9 @@ impl IronRaftTcpClient {
     }
 
     // 构建完整快照元信息传输模型。
-    fn build_snapshot_meta(meta: &SnapshotMeta<u64, openraft::BasicNode>) -> IronRaftFullSnapshotMeta {
+    fn build_snapshot_meta(
+        meta: &SnapshotMeta<u64, openraft::BasicNode>,
+    ) -> IronRaftFullSnapshotMeta {
         let (last_log_term, last_log_node_id, last_log_index) = if let Some(log_id) = &meta.last_log_id {
             (
                 Some(log_id.leader_id.term),
@@ -141,11 +146,17 @@ impl IronRaftTcpClient {
             Ok(result) => result,
             Err(_) => {
                 self.clear_cached_stream().await;
-                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "raft tcp rpc soft ttl timeout"))
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "raft tcp rpc soft ttl timeout",
+                ))
             }
         }
     }
+}
 
+// IronMesh 自定义扩展协议相关方法。
+impl IronRaftTcpClient {
     // 请求目标节点把当前节点加入集群。
     pub async fn join_node(
         &self,
@@ -159,7 +170,12 @@ impl IronRaftTcpClient {
             node_addr,
         };
 
-        match tokio::time::timeout(Duration::from_secs(2), self.send_request_with_retry(request)).await {
+        match tokio::time::timeout(
+            Duration::from_secs(2),
+            self.send_request_with_retry(request),
+        )
+        .await
+        {
             Ok(result) => match result? {
                 IronRaftTcpRpcResponse::JoinNode(Ok(())) => Ok(()),
                 IronRaftTcpRpcResponse::JoinNode(Err(error)) => {
