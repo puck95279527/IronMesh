@@ -10,7 +10,7 @@ use thiserror::Error;
 
 // 集群核心错误类型。
 #[derive(Debug, Error)]
-pub enum IronClusterError {
+pub enum ClusterError {
     // 文件或网络监听错误。
     #[error("集群 IO 错误: {0}")]
     Io(#[from] std::io::Error),
@@ -55,43 +55,37 @@ pub enum IronClusterError {
     // TCP 协议消息不符合预期。
     #[error("集群 TCP 协议错误: {0}")]
     Protocol(String),
-    // 数字环境变量无法解析。
-    #[error("集群数字环境变量无效: {name}={value}")]
-    InvalidNumberEnv {
-        name: String,  // 环境变量名称。
-        value: String, // 环境变量原始值。
-    },
 }
 
-impl From<openraft::ConfigError> for IronClusterError {
+impl From<openraft::ConfigError> for ClusterError {
     // 转换 OpenRaft 配置错误。
     fn from(value: openraft::ConfigError) -> Self {
         Self::RaftConfig(value.to_string())
     }
 }
 
-impl From<openraft::error::Fatal<u64>> for IronClusterError {
+impl From<openraft::error::Fatal<u64>> for ClusterError {
     // 转换 OpenRaft 致命错误。
     fn from(value: openraft::error::Fatal<u64>) -> Self {
         Self::RaftFatal(value.to_string())
     }
 }
 
-impl From<RaftError<u64, InitializeError<u64, BasicNode>>> for IronClusterError {
+impl From<RaftError<u64, InitializeError<u64, BasicNode>>> for ClusterError {
     // 转换 OpenRaft 初始化错误。
     fn from(value: RaftError<u64, InitializeError<u64, BasicNode>>) -> Self {
         Self::RaftInitialize(value.to_string())
     }
 }
 
-impl From<RaftError<u64, ClientWriteError<u64, BasicNode>>> for IronClusterError {
+impl From<RaftError<u64, ClientWriteError<u64, BasicNode>>> for ClusterError {
     // 转换 OpenRaft 写入错误。
     fn from(value: RaftError<u64, ClientWriteError<u64, BasicNode>>) -> Self {
         Self::RaftWrite(value.to_string())
     }
 }
 
-impl From<RaftError<u64, CheckIsLeaderError<u64, BasicNode>>> for IronClusterError {
+impl From<RaftError<u64, CheckIsLeaderError<u64, BasicNode>>> for ClusterError {
     // 转换 OpenRaft 线性读错误。
     fn from(value: RaftError<u64, CheckIsLeaderError<u64, BasicNode>>) -> Self {
         Self::RaftRead(value.to_string())

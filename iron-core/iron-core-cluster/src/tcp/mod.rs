@@ -1,8 +1,8 @@
 // 集群 TCP 控制面模块。
 
-use crate::model::IronClusterError;
-use crate::model::IronClusterFrameHeader;
-use crate::model::IronClusterFrameKind;
+use crate::model::ClusterError;
+use crate::model::ClusterFrameHeader;
+use crate::model::ClusterFrameKind;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio::io::AsyncRead;
@@ -16,7 +16,7 @@ const IRON_CLUSTER_FRAME_HEADER_LEN: usize = 6;
 // 读取一个 JSON TCP 帧。
 pub(crate) async fn read_json_frame<R, T>(
     reader: &mut R,
-) -> Result<(IronClusterFrameKind, T), IronClusterError>
+) -> Result<(ClusterFrameKind, T), ClusterError>
 where
     R: AsyncRead + Unpin,
     T: DeserializeOwned,
@@ -29,9 +29,9 @@ where
 // 写入一个 JSON TCP 帧。
 pub(crate) async fn write_json_frame<W, T>(
     writer: &mut W,
-    kind: IronClusterFrameKind,
+    kind: ClusterFrameKind,
     value: &T,
-) -> Result<(), IronClusterError>
+) -> Result<(), ClusterError>
 where
     W: AsyncWrite + Unpin,
     T: Serialize + ?Sized,
@@ -43,7 +43,7 @@ where
 // 读取一个原始 TCP 帧。
 pub(crate) async fn read_frame<R>(
     reader: &mut R,
-) -> Result<(IronClusterFrameKind, Vec<u8>), IronClusterError>
+) -> Result<(ClusterFrameKind, Vec<u8>), ClusterError>
 where
     R: AsyncRead + Unpin,
 {
@@ -51,8 +51,8 @@ where
     reader.read_exact(&mut header_bytes).await?;
 
     let kind_code = u16::from_be_bytes([header_bytes[0], header_bytes[1]]);
-    let Some(kind) = IronClusterFrameKind::from_code(kind_code) else {
-        return Err(IronClusterError::InvalidFrameKind { kind: kind_code });
+    let Some(kind) = ClusterFrameKind::from_code(kind_code) else {
+        return Err(ClusterError::InvalidFrameKind { kind: kind_code });
     };
     let body_len = u32::from_be_bytes([
         header_bytes[2],
@@ -60,7 +60,7 @@ where
         header_bytes[4],
         header_bytes[5],
     ]);
-    let header = IronClusterFrameHeader { kind, body_len };
+    let header = ClusterFrameHeader { kind, body_len };
     let mut body = vec![0_u8; header.body_len as usize];
 
     reader.read_exact(&mut body).await?;
@@ -70,13 +70,13 @@ where
 // 写入一个原始 TCP 帧。
 pub(crate) async fn write_frame<W>(
     writer: &mut W,
-    kind: IronClusterFrameKind,
+    kind: ClusterFrameKind,
     body: &[u8],
-) -> Result<(), IronClusterError>
+) -> Result<(), ClusterError>
 where
     W: AsyncWrite + Unpin,
 {
-    let header = IronClusterFrameHeader {
+    let header = ClusterFrameHeader {
         kind,
         body_len: body.len() as u32,
     };
@@ -101,14 +101,14 @@ mod tests {
         let (mut client, mut server) = tokio::io::duplex(1024);
         let payload = "ok".to_string();
 
-        write_json_frame(&mut client, IronClusterFrameKind::Heartbeat, &payload)
+        write_json_frame(&mut client, ClusterFrameKind::Heartbeat, &payload)
             .await
             .expect("写入 TCP JSON 帧失败");
-        let (kind, actual): (IronClusterFrameKind, String) = read_json_frame(&mut server)
+        let (kind, actual): (ClusterFrameKind, String) = read_json_frame(&mut server)
             .await
             .expect("读取 TCP JSON 帧失败");
 
-        assert_eq!(kind, IronClusterFrameKind::Heartbeat);
+        assert_eq!(kind, ClusterFrameKind::Heartbeat);
         assert_eq!(actual, payload);
     }
 }

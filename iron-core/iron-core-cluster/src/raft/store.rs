@@ -1,8 +1,7 @@
 // 集群 Raft 内存存储实现。
 
-use crate::model::IronClusterCommandResult;
-use crate::model::IronRaftEntry;
-use crate::model::IronRaftSnapshotData;
+use crate::model::IronClusterRaftState;
+use crate::model::IronClusterService;
 use crate::model::IronRaftStore;
 use crate::model::IronRaftTypeConfig;
 use openraft::LogId;
@@ -19,11 +18,12 @@ use openraft::storage::LogFlushed;
 use openraft::storage::RaftLogStorage;
 use openraft::storage::RaftSnapshotBuilder;
 use openraft::storage::RaftStateMachine;
+use std::collections::BTreeMap;
 use std::ops::{Bound, RangeBounds};
 
 impl IronRaftStore {
     // 读取当前服务注册表快照。
-    pub(crate) async fn registry_snapshot(&self) -> crate::model::IronClusterRegistry {
+    pub(crate) async fn registry_snapshot(&self) -> BTreeMap<String, IronClusterService> {
         self.inner.read().await.registry.clone()
     }
 }
@@ -33,7 +33,7 @@ impl RaftLogReader<IronRaftTypeConfig> for IronRaftStore {
     async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + std::fmt::Debug + Send>(
         &mut self,
         range: RB,
-    ) -> Result<Vec<IronRaftEntry>, StorageError<u64>> {
+    ) -> Result<Vec<openraft::Entry<IronRaftTypeConfig>>, StorageError<u64>> {
         let start = match range.start_bound() {
             Bound::Included(value) => *value,
             Bound::Excluded(value) => value.saturating_add(1),
@@ -110,7 +110,7 @@ impl RaftLogStorage<IronRaftTypeConfig> for IronRaftStore {
         callback: LogFlushed<IronRaftTypeConfig>,
     ) -> Result<(), StorageError<u64>>
     where
-        I: IntoIterator<Item = IronRaftEntry> + Send,
+        I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig>> + Send,
         I::IntoIter: Send,
     {
         let mut inner = self.inner.write().await;
@@ -148,12 +148,9 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStore {
     }
 
     // 应用已提交的 Raft 日志到状态机。
-    async fn apply<I>(
-        &mut self,
-        entries: I,
-    ) -> Result<Vec<IronClusterCommandResult>, StorageError<u64>>
+    async fn apply<I>(&mut self, entries: I) -> Result<Vec<()>, StorageError<u64>>
     where
-        I: IntoIterator<Item = IronRaftEntry> + Send,
+        I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig>> + Send,
         I::IntoIter: Send,
     {
         let mut results = Vec::new();
@@ -162,14 +159,14 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStore {
         for entry in entries {
             inner.last_applied_log_id = Some(entry.log_id);
             match entry.payload {
-                EntryPayload::Blank => results.push(IronClusterCommandResult::default()),
+                EntryPayload::Blank => results.push(()),
                 EntryPayload::Membership(membership) => {
                     inner.last_membership = StoredMembership::new(Some(entry.log_id), membership);
-                    results.push(IronClusterCommandResult::default());
+                    results.push(());
                 }
                 EntryPayload::Normal(command) => {
-                    let result = inner.registry.apply_command(command);
-                    results.push(result);
+                    command.apply_to(&mut inner.registry);
+                    results.push(());
                 }
             }
         }
@@ -193,13 +190,13 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStore {
         meta: &SnapshotMeta<u64, BasicNode>,
         snapshot: Box<Vec<u8>>,
     ) -> Result<(), StorageError<u64>> {
-        let snapshot_data: IronRaftSnapshotData =
+        let raft_state: IronClusterRaftState =
             serde_json::from_slice(&snapshot).map_err(|error| snapshot_storage_error(error))?;
         let mut inner = self.inner.write().await;
 
-        inner.last_applied_log_id = snapshot_data.last_applied_log_id;
-        inner.last_membership = snapshot_data.last_membership;
-        inner.registry = snapshot_data.registry;
+        inner.last_applied_log_id = raft_state.last_applied_log_id;
+        inner.last_membership = raft_state.last_membership;
+        inner.registry = raft_state.registry;
         inner.snapshot = Some(Snapshot {
             meta: meta.clone(),
             snapshot,
@@ -220,7 +217,7 @@ impl RaftSnapshotBuilder<IronRaftTypeConfig> for IronRaftStore {
     // 构建当前状态机快照。
     async fn build_snapshot(&mut self) -> Result<Snapshot<IronRaftTypeConfig>, StorageError<u64>> {
         let inner = self.inner.read().await;
-        let data = IronRaftSnapshotData {
+        let data = IronClusterRaftState {
             last_applied_log_id: inner.last_applied_log_id,
             last_membership: inner.last_membership.clone(),
             registry: inner.registry.clone(),
@@ -232,7 +229,7 @@ impl RaftSnapshotBuilder<IronRaftTypeConfig> for IronRaftStore {
                 .last_applied_log_id
                 .map(|log_id| log_id.index)
                 .unwrap_or_default(),
-            inner.registry.metadata_version
+            inner.registry.len()
         );
 
         Ok(Snapshot {

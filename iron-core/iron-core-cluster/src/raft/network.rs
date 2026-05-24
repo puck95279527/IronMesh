@@ -1,13 +1,13 @@
 // 集群 Raft TCP 网络实现。
 
-use crate::model::IronClusterError;
-use crate::model::IronClusterFrameKind;
+use crate::model::ClusterError;
+use crate::model::ClusterFrameKind;
 use crate::model::IronRaftNetwork;
 use crate::model::IronRaftNetworkFactory;
-use crate::model::IronRaftSnapshot;
 use crate::model::IronRaftTypeConfig;
 use openraft::RaftNetwork;
 use openraft::RaftNetworkFactory;
+use openraft::Snapshot;
 use openraft::Vote;
 use openraft::error::Fatal;
 use openraft::error::RPCError;
@@ -45,7 +45,7 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftNetwork {
         rpc: AppendEntriesRequest<IronRaftTypeConfig>,
         _option: RPCOption,
     ) -> Result<AppendEntriesResponse<u64>, RPCError<u64, BasicNode, RaftError<u64>>> {
-        self.send_json(IronClusterFrameKind::RaftAppend, &rpc).await
+        self.send_json(ClusterFrameKind::RaftAppend, &rpc).await
     }
 
     // 发送 Raft RequestVote RPC。
@@ -54,14 +54,14 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftNetwork {
         rpc: VoteRequest<u64>,
         _option: RPCOption,
     ) -> Result<VoteResponse<u64>, RPCError<u64, BasicNode, RaftError<u64>>> {
-        self.send_json(IronClusterFrameKind::RaftVote, &rpc).await
+        self.send_json(ClusterFrameKind::RaftVote, &rpc).await
     }
 
     // 发送 Raft 完整快照 RPC。
     async fn full_snapshot(
         &mut self,
         vote: Vote<u64>,
-        snapshot: IronRaftSnapshot,
+        snapshot: Snapshot<IronRaftTypeConfig>,
         _cancel: impl Future<Output = ReplicationClosed> + Send + 'static,
         _option: RPCOption,
     ) -> Result<SnapshotResponse<u64>, StreamingError<IronRaftTypeConfig, Fatal<u64>>> {
@@ -75,7 +75,7 @@ impl IronRaftNetwork {
     // 向目标节点发送 TCP JSON RPC。
     async fn send_json<TReq, TResp>(
         &self,
-        kind: IronClusterFrameKind,
+        kind: ClusterFrameKind,
         request: &TReq,
     ) -> Result<TResp, RPCError<u64, BasicNode, RaftError<u64>>>
     where
@@ -97,6 +97,6 @@ impl IronRaftNetwork {
 }
 
 // 转换 Raft TCP 网络错误。
-fn raft_tcp_error(error: IronClusterError) -> RPCError<u64, BasicNode, RaftError<u64>> {
+fn raft_tcp_error(error: ClusterError) -> RPCError<u64, BasicNode, RaftError<u64>> {
     RPCError::Unreachable(Unreachable::new(&error))
 }
