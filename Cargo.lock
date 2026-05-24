@@ -1497,6 +1497,8 @@ dependencies = [
 name = "iron-core-cluster-v2"
 version = "0.1.0"
 dependencies = [
+ "openraft 0.9.24",
+ "serde",
  "tracing",
  "tracing-subscriber",
 ]
