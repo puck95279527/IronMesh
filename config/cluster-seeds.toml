@@ -3,13 +3,13 @@
 raft_node_id = 1
 tcp_addr = "127.0.0.1:6001"
 
-[[registry_nodes]]
-raft_node_id = 2
-tcp_addr = "127.0.0.1:6002"
+# [[registry_nodes]]
+# raft_node_id = 2
+# tcp_addr = "127.0.0.1:6002"
 
-[[registry_nodes]]
-raft_node_id = 3
-tcp_addr = "127.0.0.1:6003"
+# [[registry_nodes]]
+# raft_node_id = 3
+# tcp_addr = "127.0.0.1:6003"
 
 [debug_http]
 http_addr = "127.0.0.1:8888"
