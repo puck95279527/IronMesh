@@ -68,4 +68,4 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - 非自动生成的 Rust 代码中，每个数据结构上方、每个字段后方、每个方法上方都必须有中文注释。
 - `iron-protocol/iron-flat-dsl` 下所有协议 schema 中，所有协议数据模型定义上方、所有字段后方、所有枚举值后方都必须有中文注释。
 - 协议数据模型包括但不限于：`namespace`、`enum`、`table`、`struct`、`union`、`rpc_service`、`root_type`。
-- 涉及数据结构或方法变更时，Codex/AI 必须先用表格说明设计，用户确认后再编码。
+- 涉及数据结构或方法变更时，Codex/AI 必须先用表格说明变更了数据结构和方法，用户确认后再编码。

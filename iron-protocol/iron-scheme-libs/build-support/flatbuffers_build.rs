@@ -34,7 +34,7 @@ pub fn generate_flatbuffers(schema_dir: &Path, out_dir: &Path) {
         .output()
         .unwrap_or_else(|error| {
             panic!(
-                "failed to execute protocol-local flatc `{}`: {error}. Restore iron-protocol/tools/flatc version 25.12.19",
+                "failed to execute protocol-local flatc `{}`: {error}. Restore protocol-local flatc version 25.12.19",
                 flatc.display()
             )
         });
@@ -52,7 +52,7 @@ pub fn generate_flatbuffers(schema_dir: &Path, out_dir: &Path) {
     format_generated_outputs(out_dir);
 }
 
-// 从协议目录推导项目固定的 flatc 工具路径。
+// 从协议目录推导当前平台固定的 flatc 工具路径。
 fn protocol_flatc(schema_dir: &Path) -> PathBuf {
     schema_dir
         .parent()
@@ -63,7 +63,17 @@ fn protocol_flatc(schema_dir: &Path) -> PathBuf {
                 schema_dir.display()
             )
         })
-        .join("tools/flatc")
+        .join("tools")
+        .join(protocol_flatc_file_name())
+}
+
+// 读取当前平台应该使用的 flatc 工具文件名。
+fn protocol_flatc_file_name() -> &'static str {
+    if cfg!(windows) {
+        "flatc.exe"
+    } else {
+        "flatc"
+    }
 }
 
 // 收集协议目录下的 FlatBuffers schema 文件。
@@ -144,10 +154,12 @@ fn format_generated_outputs(out_dir: &Path) {
     let root_module = out_dir.join("mod.rs");
     if root_module.exists() {
         rustfmt(&root_module);
+        normalize_line_endings(&root_module);
     }
 
     for generated in generated_files(out_dir) {
         rustfmt(&generated);
+        normalize_line_endings(&generated);
     }
 }
 
@@ -170,6 +182,41 @@ fn rustfmt(path: &Path) {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+}
+
+// 将生成文件换行符固定为 LF，避免不同平台构建产生纯换行差异。
+fn normalize_line_endings(path: &Path) {
+    let content = std::fs::read(path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read generated schema `{}` for line ending normalization: {error}",
+            path.display()
+        )
+    });
+
+    let mut normalized = Vec::with_capacity(content.len());
+    let mut index = 0;
+    while index < content.len() {
+        if content[index] == b'\r' {
+            normalized.push(b'\n');
+            if content.get(index + 1) == Some(&b'\n') {
+                index += 2;
+            } else {
+                index += 1;
+            }
+        } else {
+            normalized.push(content[index]);
+            index += 1;
+        }
+    }
+
+    if normalized != content {
+        std::fs::write(path, normalized).unwrap_or_else(|error| {
+            panic!(
+                "failed to write generated schema `{}` with LF line endings: {error}",
+                path.display()
+            )
+        });
     }
 }
 

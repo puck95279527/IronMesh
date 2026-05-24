@@ -1,0 +1,7 @@
+*.rs text eol=lf
+*.fbs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+
+iron-protocol/tools/flatc binary
+iron-protocol/tools/flatc.exe binary
