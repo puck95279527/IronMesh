@@ -25,3 +25,4 @@ Thumbs.db
 coverage/
 tarpaulin-report.html
 lcov.info
+/iron-core/iron-core-cluster-v2/openraft-examples
