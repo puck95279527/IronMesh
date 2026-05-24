@@ -1,4 +1,4 @@
-// 启动网关 Raft 节点。
+// 启动认证 Raft 节点。
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::BTreeMap;
@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ]);
     let cluster_manager = IronRaftClusterManager::new(
-        IronRaftNode::new(5, "cluster-gate-2", "127.0.0.1:5005"),
+        IronRaftNode::new(7, "cluster-auth", "127.0.0.1:5007", Some("127.0.0.1:7107".to_string())),
         boot_nodes,
     );
 

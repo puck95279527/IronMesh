@@ -53,10 +53,7 @@ impl IronRaftClusterManager {
         let self_tag = self_node_tag(self.current_node.node_id, &self.current_node.node_name);
         let node_id = self.current_node.node_id;
         let node_name = self.current_node.node_name.clone();
-        let debug_http_addr = self
-            .boot_nodes
-            .get(&self.current_node.node_id)
-            .and_then(|node| node.http_debug_addr.clone());
+        let debug_http_addr = self.current_node.http_debug_addr.clone();
 
         // 1. 校验当前节点和启动节点表。
         self.validate_topology()?;

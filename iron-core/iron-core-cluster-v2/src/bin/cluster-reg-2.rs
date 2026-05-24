@@ -24,7 +24,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ]);
     let cluster_manager = IronRaftClusterManager::new(
-        IronRaftNode::new(2, "cluster-reg-2", "127.0.0.1:5002"),
+        IronRaftNode::new(
+            2,
+            "cluster-reg-2",
+            "127.0.0.1:5002",
+            Some("127.0.0.1:7102".to_string()),
+        ),
         boot_nodes,
     );
 
