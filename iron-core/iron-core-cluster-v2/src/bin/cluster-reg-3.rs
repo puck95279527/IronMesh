@@ -1,5 +1,6 @@
-// 打印当前注册节点身份。
-fn main() {
+// 启动第三个注册 Raft 节点。
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    tracing::info!("cluster-reg-3");
+    iron_core_cluster_v2::raft::start_iron_raft_node(3, "127.0.0.1:5003".to_string()).await
 }
