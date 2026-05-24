@@ -105,8 +105,8 @@ impl IronRaftClusterManager {
 
     // 校验当前节点和启动节点表。
     fn validate_topology(&self) -> Result<(), Box<dyn Error>> {
-        if self.boot_nodes.is_empty() || !self.boot_nodes.contains_key(&self.current_node.node_id) {
-            return Err(IoError::new(ErrorKind::InvalidInput, "当前节点必须存在于 boot_nodes 中").into());
+        if self.boot_nodes.is_empty() {
+            return Err(IoError::new(ErrorKind::InvalidInput, "boot_nodes 不能为空").into());
         }
 
         Ok(())
@@ -139,7 +139,8 @@ impl IronRaftClusterManager {
         let self_tag = self_node_tag(node_id, &node_name);
         tracing::info!(%self_tag, "[Iron] [cluster] 启动 Raft 集群节点");
 
-        Ok((raft.clone(), IronRaftTcpServer::new(raft), node_addr))
+        let boot_node_ids = self.boot_nodes.keys().copied().collect::<BTreeSet<_>>();
+        Ok((raft.clone(), IronRaftTcpServer::new(raft, boot_node_ids), node_addr))
     }
 
     // 尝试加入已有集群；如果加入成功，返回 false；如果抢到起盘资格，返回 true。
@@ -152,6 +153,7 @@ impl IronRaftClusterManager {
                 Some((*peer_id, bootstrap_node_name(*peer_id)))
             }
         }));
+        let is_boot_node = self.boot_nodes.contains_key(&self.current_node.node_id);
 
         tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 开始嗅探 boot 节点");
 
@@ -201,6 +203,12 @@ impl IronRaftClusterManager {
             }
 
             // 4.3 没有看到任何已有节点时，尝试抢占 bootstrap 资格。
+            if !is_boot_node {
+                tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 当前节点不是起盘节点，继续等待集群可加入");
+                tokio::time::sleep(Duration::from_millis(800)).await;
+                continue;
+            }
+
             tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 未发现可加入的集群节点，准备争抢起盘资格");
             let bootstrap_lock = match tokio::net::TcpListener::bind(BOOTSTRAP_LOCK_ADDR).await {
                 Ok(lock) => lock,

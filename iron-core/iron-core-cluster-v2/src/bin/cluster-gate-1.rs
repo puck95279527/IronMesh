@@ -1,4 +1,32 @@
-// 打印当前网关节点身份。
-fn main() {
-    iron_core_cluster_v2::logging::init_cluster_logging();
+// 启动网关 Raft 节点。
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use std::collections::BTreeMap;
+
+    use iron_core_cluster_v2::logging::init_cluster_logging;
+    use iron_core_cluster_v2::raft::cluster::iron_raft_boot_node::IronRaftBootNode;
+    use iron_core_cluster_v2::raft::cluster::iron_raft_cluster_manager::IronRaftClusterManager;
+    use iron_core_cluster_v2::raft::cluster::iron_raft_node::IronRaftNode;
+
+    init_cluster_logging();
+    let boot_nodes = BTreeMap::from([
+        (
+            1,
+            IronRaftBootNode::new(1, "127.0.0.1:5001", Some("127.0.0.1:7101".to_string())),
+        ),
+        (
+            2,
+            IronRaftBootNode::new(2, "127.0.0.1:5002", Some("127.0.0.1:7102".to_string())),
+        ),
+        (
+            3,
+            IronRaftBootNode::new(3, "127.0.0.1:5003", Some("127.0.0.1:7103".to_string())),
+        ),
+    ]);
+    let cluster_manager = IronRaftClusterManager::new(
+        IronRaftNode::new(4, "cluster-gate-1", "127.0.0.1:5004"),
+        boot_nodes,
+    );
+
+    cluster_manager.run().await
 }

@@ -25,13 +25,14 @@ use crate::logging::peer_tag as peer_node_tag;
 #[derive(Clone)]
 pub struct IronRaftTcpServer {
     pub raft: Raft<IronRaftTypeConfig>, // Raft 节点句柄。
+    pub boot_node_ids: BTreeSet<u64>, // 需要参与投票的启动节点 ID。
 }
 
 // OpenRaft 标准协议相关实现。
 impl IronRaftTcpServer {
     // 创建 TCP 服务端。
-    pub fn new(raft: Raft<IronRaftTypeConfig>) -> Self {
-        Self { raft }
+    pub fn new(raft: Raft<IronRaftTypeConfig>, boot_node_ids: BTreeSet<u64>) -> Self {
+        Self { raft, boot_node_ids }
     }
 
     // 启动 TCP 服务端并持续处理连接。
@@ -39,12 +40,14 @@ impl IronRaftTcpServer {
         let addr = tcp_addr.parse::<SocketAddr>()?;
         let listener = tokio::net::TcpListener::bind(addr).await?;
         tracing::info!(%tcp_addr, "[Iron] [cluster] 启动 Raft TCP 服务");
+        let boot_node_ids = self.boot_node_ids.clone();
 
         loop {
             let (mut stream, peer_addr) = listener.accept().await?;
             let raft = self.raft.clone();
+            let boot_node_ids = boot_node_ids.clone();
             tokio::spawn(async move {
-                if let Err(error) = Self::handle_connection(raft, &mut stream).await {
+                if let Err(error) = Self::handle_connection(raft, boot_node_ids, &mut stream).await {
                     tracing::warn!(%peer_addr, %error, "[Iron] [cluster] 处理 Raft TCP 连接失败");
                 }
             });
@@ -54,6 +57,7 @@ impl IronRaftTcpServer {
     // 在单个连接上循环处理多个请求。
     async fn handle_connection(
         raft: Raft<IronRaftTypeConfig>,
+        boot_node_ids: BTreeSet<u64>,
         stream: &mut tokio::net::TcpStream,
     ) -> Result<(), std::io::Error> {
         loop {
@@ -99,7 +103,14 @@ impl IronRaftTcpServer {
                     node_addr,
                 } => {
                     let result =
-                        Self::handle_join_node(raft.clone(), node_id, node_name, node_addr).await;
+                        Self::handle_join_node(
+                            raft.clone(),
+                            boot_node_ids.clone(),
+                            node_id,
+                            node_name,
+                            node_addr,
+                        )
+                        .await;
                     IronRaftTcpRpcResponse::JoinNode(result)
                 }
             };
@@ -169,6 +180,7 @@ impl IronRaftTcpServer {
     // 处理节点加入请求。
     async fn handle_join_node(
         raft: Raft<IronRaftTypeConfig>,
+        boot_node_ids: BTreeSet<u64>,
         node_id: u64,
         node_name: String,
         node_addr: String,
@@ -198,9 +210,11 @@ impl IronRaftTcpServer {
             .await
             .map_err(|error| error.to_string())?;
 
-        raft.change_membership(ChangeMembers::AddVoterIds(BTreeSet::from([node_id])), true)
-            .await
-            .map_err(|error| error.to_string())?;
+        if boot_node_ids.contains(&node_id) {
+            raft.change_membership(ChangeMembers::AddVoterIds(BTreeSet::from([node_id])), true)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
 
         tracing::info!(%peer_tag, node_addr = %node_addr, "[Iron] [cluster] 节点已加入集群");
         Ok(())
