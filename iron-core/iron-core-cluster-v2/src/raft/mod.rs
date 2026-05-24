@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use openraft::Config;
@@ -8,8 +7,8 @@ use openraft::Raft;
 use crate::raft::model::iron_raft_log_store::IronRaftLogStore;
 use crate::raft::model::iron_raft_state_machine_store::IronRaftStateMachineStore;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
-use crate::raft::network::iron_raft_http_server::IronRaftHttpServer;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
+use crate::raft::network::iron_raft_tcp_server::IronRaftTcpServer;
 
 // Raft 能力模块入口。
 pub mod model;
@@ -18,7 +17,7 @@ pub mod network;
 // 启动一个最小 Raft 节点。
 pub async fn start_iron_raft_node(
     node_id: u64,
-    http_addr: String,
+    tcp_addr: String,
     query_port: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(
@@ -42,12 +41,9 @@ pub async fn start_iron_raft_node(
 
     let init_raft = raft.clone();
     let query_raft = raft.clone();
-    let router = IronRaftHttpServer::router(raft);
+    let tcp_server = IronRaftTcpServer::new(raft);
 
-    let addr = http_addr.parse::<SocketAddr>()?;
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-
-    tracing::info!(node_id, %http_addr, "启动 IronMesh Raft 节点");
+    tracing::info!(node_id, %tcp_addr, "启动 IronMesh Raft 节点");
     if node_id == 1 {
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -65,12 +61,11 @@ pub async fn start_iron_raft_node(
         });
     }
 
-    axum::serve(listener, router).await?;
-
+    tcp_server.serve(tcp_addr).await?;
     Ok(())
 }
 
-// 构建写死的初始成员。
+// 构建固定的初始成员。
 fn initial_members() -> BTreeMap<u64, openraft::BasicNode> {
     BTreeMap::from([
         (1, openraft::BasicNode::new("127.0.0.1:5001")),
