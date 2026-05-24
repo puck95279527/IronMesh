@@ -9,6 +9,7 @@ use crate::raft::core::iron_raft_state_machine_store::IronRaftStateMachineStore;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
 use crate::raft::network::iron_raft_tcp_server::IronRaftTcpServer;
+use crate::logging::self_tag as self_node_tag;
 
 // Raft 能力模块入口。
 pub mod cluster;
@@ -46,7 +47,8 @@ pub async fn start_iron_raft_node(
     let query_raft = raft.clone();
     let tcp_server = IronRaftTcpServer::new(raft);
 
-    tracing::info!(node_id, %tcp_addr, "[Iron] [cluster] 启动 Raft 节点");
+    let self_tag = self_node_tag(node_id, "unknown");
+    tracing::info!(%self_tag, %tcp_addr, "[Iron] [cluster] 启动 Raft 节点");
     if node_id == 1 {
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;

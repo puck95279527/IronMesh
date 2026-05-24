@@ -7,6 +7,7 @@ use axum::routing::get;
 use openraft::Raft;
 use openraft::RaftMetrics;
 
+use crate::logging::self_tag as self_node_tag;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 
 // 启动 Raft 查询 HTTP 服务。
@@ -29,10 +30,11 @@ pub async fn start_query_http(
     let query_url = format!("http://127.0.0.1:{query_port}");
     let health_url = format!("{query_url}/health");
     let metrics_url = format!("{query_url}/raft/metrics");
+    let self_tag = self_node_tag(node_id, "unknown");
 
-    tracing::info!(node_id, %query_url, "[Iron] [cluster] 启动 Raft 查询 HTTP 服务");
-    tracing::info!(node_id, %health_url, "[Iron] [cluster] Raft 查询健康检查地址");
-    tracing::info!(node_id, %metrics_url, "[Iron] [cluster] Raft 查询指标地址");
+    tracing::info!(%self_tag, %query_url, "[Iron] [cluster] 启动 Raft 查询 HTTP 服务");
+    tracing::info!(%self_tag, %health_url, "[Iron] [cluster] Raft 查询健康检查地址");
+    tracing::info!(%self_tag, %metrics_url, "[Iron] [cluster] Raft 查询指标地址");
     axum::serve(listener, router).await?;
 
     Ok(())

@@ -19,6 +19,7 @@ use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::iron_raft_tcp_frame::IronRaftTcpFrame;
 use crate::raft::network::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
 use crate::raft::network::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
+use crate::logging::peer_tag as peer_node_tag;
 
 // IronMesh Raft TCP 服务端。
 #[derive(Clone)]
@@ -172,6 +173,7 @@ impl IronRaftTcpServer {
         node_name: String,
         node_addr: String,
     ) -> Result<(), String> {
+        let peer_tag = peer_node_tag(node_id, &node_name);
         let metrics = raft.metrics().borrow().clone();
         if metrics.state != ServerState::Leader {
             return Err(format!(
@@ -186,11 +188,11 @@ impl IronRaftTcpServer {
             .get_node(&node_id)
             .is_some()
         {
-            tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "[Iron] [cluster] 节点已经在集群中");
+            tracing::info!(%peer_tag, node_addr = %node_addr, "[Iron] [cluster] 节点已经在集群中");
             return Ok(());
         }
 
-        tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "[Iron] [cluster] 开始加入节点到集群");
+        tracing::info!(%peer_tag, node_addr = %node_addr, "[Iron] [cluster] 开始加入节点到集群");
 
         raft.add_learner(node_id, openraft::BasicNode::new(node_addr.clone()), true)
             .await
@@ -200,7 +202,7 @@ impl IronRaftTcpServer {
             .await
             .map_err(|error| error.to_string())?;
 
-        tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "[Iron] [cluster] 节点已加入集群");
+        tracing::info!(%peer_tag, node_addr = %node_addr, "[Iron] [cluster] 节点已加入集群");
         Ok(())
     }
 }
