@@ -3,12 +3,14 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::net::SocketAddr;
 
+use openraft::ChangeMembers;
 use openraft::CommittedLeaderId;
 use openraft::Membership;
 use openraft::Raft;
 use openraft::Snapshot;
 use openraft::SnapshotMeta;
 use openraft::StoredMembership;
+use openraft::ServerState;
 use openraft::Vote;
 
 use crate::raft::model::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
@@ -89,6 +91,14 @@ impl IronRaftTcpServer {
                         .map(|resp| Self::build_response(resp.vote));
                     IronRaftTcpRpcResponse::FullSnapshot(result)
                 }
+                IronRaftTcpRpcRequest::JoinNode {
+                    node_id,
+                    node_name,
+                    node_addr,
+                } => {
+                    let result = Self::handle_join_node(raft.clone(), node_id, node_name, node_addr).await;
+                    IronRaftTcpRpcResponse::JoinNode(result)
+                }
             };
 
             IronRaftTcpFrame::write_json(stream, &response).await?;
@@ -134,5 +144,39 @@ impl IronRaftTcpServer {
             vote_node_id: vote.leader_id.node_id,
             vote_committed: vote.committed,
         }
+    }
+
+    // 处理节点加入请求。
+    async fn handle_join_node(
+        raft: Raft<IronRaftTypeConfig>,
+        node_id: u64,
+        node_name: String,
+        node_addr: String,
+    ) -> Result<(), String> {
+        let metrics = raft.metrics().borrow().clone();
+        if metrics.state != ServerState::Leader {
+            return Err(format!(
+                "当前节点不是 leader，current_leader={:?}, node_id={}, node_name={}",
+                metrics.current_leader, node_id, node_name
+            ));
+        }
+
+        if metrics.membership_config.membership().get_node(&node_id).is_some() {
+            tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "节点已经在集群中");
+            return Ok(());
+        }
+
+        tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "开始加入节点到集群");
+
+        raft.add_learner(node_id, openraft::BasicNode::new(node_addr.clone()), true)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        raft.change_membership(ChangeMembers::AddVoterIds(BTreeSet::from([node_id])), true)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "节点已加入集群");
+        Ok(())
     }
 }

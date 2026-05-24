@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use openraft::OptionalSend;
 use openraft::RaftNetwork;
@@ -142,6 +143,37 @@ impl IronRaftTcpClient {
                 self.clear_cached_stream().await;
                 Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "raft tcp rpc soft ttl timeout"))
             }
+        }
+    }
+
+    // 请求目标节点把当前节点加入集群。
+    pub async fn join_node(
+        &self,
+        node_id: u64,
+        node_name: String,
+        node_addr: String,
+    ) -> Result<(), std::io::Error> {
+        let request = IronRaftTcpRpcRequest::JoinNode {
+            node_id,
+            node_name,
+            node_addr,
+        };
+
+        match tokio::time::timeout(Duration::from_secs(2), self.send_request_with_retry(request)).await {
+            Ok(result) => match result? {
+                IronRaftTcpRpcResponse::JoinNode(Ok(())) => Ok(()),
+                IronRaftTcpRpcResponse::JoinNode(Err(error)) => {
+                    Err(std::io::Error::new(std::io::ErrorKind::Other, error))
+                }
+                _ => Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unexpected tcp response kind",
+                )),
+            },
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "raft tcp join node timeout",
+            )),
         }
     }
 }

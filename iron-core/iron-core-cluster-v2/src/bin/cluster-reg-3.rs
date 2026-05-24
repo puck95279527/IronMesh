@@ -1,4 +1,4 @@
-// 启动第三个注册 Raft 节点。
+// 启动注册 Raft 节点。
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::BTreeMap;
