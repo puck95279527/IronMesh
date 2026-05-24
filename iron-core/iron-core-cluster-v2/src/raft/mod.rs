@@ -26,7 +26,11 @@ pub mod model;
 pub mod network;
 
 // 启动一个最小 Raft 节点。
-pub async fn start_iron_raft_node(node_id: u64, http_addr: String) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_iron_raft_node(
+    node_id: u64,
+    http_addr: String,
+    query_port: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(
         Config {
             heartbeat_interval: 500,
@@ -47,6 +51,7 @@ pub async fn start_iron_raft_node(node_id: u64, http_addr: String) -> Result<(),
     .await?;
 
     let init_raft = raft.clone();
+    let query_raft = raft.clone();
     let router = Router::new()
         .route("/raft/append", post(append_handler))
         .route("/raft/vote", post(vote_handler))
@@ -65,6 +70,15 @@ pub async fn start_iron_raft_node(node_id: u64, http_addr: String) -> Result<(),
             }
         });
     }
+
+    if query_port != 0 {
+        tokio::spawn(async move {
+            if let Err(error) = crate::http::iron_raft_query::start_query_http(node_id, query_port, query_raft).await {
+                tracing::warn!(%error, "IronMesh Raft 查询 HTTP 服务退出");
+            }
+        });
+    }
+
     axum::serve(listener, router).await?;
 
     Ok(())
