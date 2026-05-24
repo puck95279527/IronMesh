@@ -2,6 +2,7 @@
 
 use crate::model::BizServiceKind;
 use crate::model::ClusterError;
+use crate::model::IronClusterHandle;
 
 // 启动注册中心，并从可执行文件旁边读取集群种子 TOML。
 pub fn run_registry_cluster_from_local_toml() -> Result<(), ClusterError> {
@@ -11,6 +12,13 @@ pub fn run_registry_cluster_from_local_toml() -> Result<(), ClusterError> {
 // 启动工作节点，并从可执行文件旁边读取集群种子 TOML。
 pub fn run_worker_from_local_toml(biz_kind: BizServiceKind) -> Result<(), ClusterError> {
     crate::core::config::run_worker_from_local_toml(biz_kind)
+}
+
+// 启动工作节点，并从可执行文件旁边读取集群种子 TOML 后返回本地服务发现句柄。
+pub async fn start_worker_from_local_toml(
+    biz_kind: BizServiceKind,
+) -> Result<IronClusterHandle, ClusterError> {
+    crate::core::config::start_worker_from_local_toml(biz_kind).await
 }
 
 // 复制集群种子配置到服务运行目录。

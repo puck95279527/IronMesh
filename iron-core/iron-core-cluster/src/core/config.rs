@@ -3,6 +3,7 @@
 use crate::model::BizServiceKind;
 use crate::model::ClusterError;
 use crate::model::ClusterSeedConfig;
+use crate::model::IronClusterHandle;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -46,6 +47,26 @@ pub(crate) fn run_worker_from_local_toml(biz_kind: BizServiceKind) -> Result<(),
         biz_service_id,
         seed_config.registry_nodes,
     ))
+}
+
+// 启动工作节点，并从可执行文件旁边读取集群种子 TOML 后返回本地服务发现句柄。
+pub(crate) async fn start_worker_from_local_toml(
+    biz_kind: BizServiceKind,
+) -> Result<IronClusterHandle, ClusterError> {
+    crate::core::runtime::init_tracing();
+
+    let seed_config_path = local_seed_config_path()?;
+    let seed_config = ClusterSeedConfig::from_toml_file(seed_config_path)?;
+    let cluster_id = read_env_or_string("IRON_CLUSTER_ID", "ironmesh-local");
+    let biz_service_id = env::var("IRON_BIZ_SERVICE_ID").unwrap_or_default();
+
+    crate::core::runtime::start_worker_with_handle(
+        cluster_id,
+        biz_kind,
+        biz_service_id,
+        seed_config.registry_nodes,
+    )
+    .await
 }
 
 // 复制集群种子配置到服务运行目录。

@@ -7,6 +7,7 @@ use crate::model::ClusterCommand;
 use crate::model::ClusterError;
 use crate::model::ClusterFrameKind;
 use crate::model::ClusterRegistryNodeConfig;
+use crate::model::IronClusterHandle;
 use crate::model::IronClusterService;
 use crate::model::IronRaftStore;
 use crate::model::IronRaftTypeConfig;
@@ -25,7 +26,6 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
@@ -88,10 +88,22 @@ pub(crate) async fn start_worker(
     biz_service_id: String,
     registry_nodes: Vec<ClusterRegistryNodeConfig>,
 ) -> Result<(), ClusterError> {
+    start_worker_with_handle(cluster_id, biz_kind, biz_service_id, registry_nodes).await?;
+    pending::<()>().await;
+    Ok(())
+}
+
+// 启动工作节点，并返回本地服务发现句柄。
+pub(crate) async fn start_worker_with_handle(
+    cluster_id: String,
+    biz_kind: BizServiceKind,
+    biz_service_id: String,
+    registry_nodes: Vec<ClusterRegistryNodeConfig>,
+) -> Result<IronClusterHandle, ClusterError> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let local_addr = listener.local_addr()?;
     let record = worker_service_record(biz_kind, &biz_service_id, local_addr);
-    let service_cache = Arc::new(RwLock::new(BTreeMap::new()));
+    let handle = IronClusterHandle::new();
 
     tokio::spawn(async move {
         loop {
@@ -112,14 +124,24 @@ pub(crate) async fn start_worker(
         "工作节点已启动"
     );
 
+    let worker_handle = handle.clone();
+    tokio::spawn(async move {
+        maintain_registry_seed_connections(registry_nodes, record, worker_handle).await;
+    });
+
+    Ok(handle)
+}
+
+// 维护工作节点到注册中心种子节点的连接。
+async fn maintain_registry_seed_connections(
+    registry_nodes: Vec<ClusterRegistryNodeConfig>,
+    record: IronClusterService,
+    handle: IronClusterHandle,
+) {
     loop {
         for registry_node in &registry_nodes {
-            match maintain_registry_connection(
-                &registry_node.tcp_addr,
-                &record,
-                service_cache.clone(),
-            )
-            .await
+            match maintain_registry_connection(&registry_node.tcp_addr, &record, handle.clone())
+                .await
             {
                 Ok(()) => {}
                 Err(error) => {
@@ -395,7 +417,7 @@ async fn start_registry_debug_http(
 async fn maintain_registry_connection(
     registry_addr: &str,
     record: &IronClusterService,
-    service_cache: Arc<RwLock<BTreeMap<String, IronClusterService>>>,
+    handle: IronClusterHandle,
 ) -> Result<(), ClusterError> {
     let stream = TcpStream::connect(registry_addr).await?;
     let (mut reader, mut writer) = stream.into_split();
@@ -415,8 +437,9 @@ async fn maintain_registry_connection(
                 }
 
                 let snapshot_len = snapshot.len();
-                *service_cache.write().await = snapshot;
-                info!(snapshot_len = snapshot_len, "工作节点服务发现缓存已更新");
+                if handle.update_services(snapshot).await {
+                    info!(snapshot_len = snapshot_len, "工作节点服务发现缓存已更新");
+                }
             }
         }
     }

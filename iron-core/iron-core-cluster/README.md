@@ -37,6 +37,19 @@
 | `IronClusterService` | `biz_service_id` | 业务服务实例 ID，例如 `game_pdk-1001`。 |
 | `IronClusterService` | `biz_services` | 当前实例暴露的业务端点列表。 |
 
+## IronClusterEvent
+
+| 类型 | 成员 | 作用 |
+|---|---|---|
+| `IronClusterEvent` | `ServicesChanged` | 本地服务表快照已经发生变化。 |
+
+## IronClusterHandle
+
+| 类型 | 字段 | 作用 |
+|---|---|---|
+| `IronClusterHandle` | `services` | 本地服务表缓存。 |
+| `IronClusterHandle` | `service_events` | 本地服务表事件通知源。 |
+
 ## ClusterCommand
 
 | 类型 | 成员 | 作用 |
@@ -169,6 +182,10 @@
 |---|---|---|---|
 | `run_registry_cluster_from_local_toml` | 无 | `Result<(), ClusterError>` | 启动注册中心，并从可执行文件旁边读取集群种子 TOML。 |
 | `run_worker_from_local_toml` | `biz_kind: BizServiceKind` | `Result<(), ClusterError>` | 启动工作节点，并从可执行文件旁边读取集群种子 TOML。 |
+| `start_worker_from_local_toml` | `biz_kind: BizServiceKind` | `Result<IronClusterHandle, ClusterError>` | 启动工作节点，并返回本地服务发现句柄。 |
 | `copy_cluster_seed_config_to_runtime_dir` | 无 | `Result<(), ClusterError>` | 复制集群种子配置到服务运行目录。 |
+| `IronClusterHandle::services` | 无 | `BTreeMap<String, IronClusterService>` | 读取当前本地服务表快照。 |
+| `IronClusterHandle::find_by_kind` | `biz_kind: BizServiceKind` | `Vec<IronClusterService>` | 按业务服务类型读取当前本地服务实例。 |
+| `IronClusterHandle::subscribe` | 无 | `watch::Receiver<IronClusterEvent>` | 订阅本地服务发现事件。 |
 | `GET /iron/cluster/health` | 无 | `ok` | 注册中心验证 HTTP 健康检查。 |
 | `GET /iron/cluster/services` | 无 | `BTreeMap<String, IronClusterService>` | 查询注册中心当前可见服务状态表。 |

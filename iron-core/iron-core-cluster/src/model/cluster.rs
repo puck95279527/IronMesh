@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tokio::sync::watch;
 
 // Raft 服务角色。
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -60,6 +63,67 @@ pub struct IronClusterService {
     pub biz_services: Vec<BizService>, // 当前实例暴露的业务端点列表。
 }
 
+// 集群本地服务发现事件。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IronClusterEvent {
+    ServicesChanged, // 本地服务表快照已经发生变化。
+}
+
+// 集群本地运行句柄。
+#[derive(Clone)]
+pub struct IronClusterHandle {
+    services: Arc<RwLock<BTreeMap<String, IronClusterService>>>, // 本地服务表缓存。
+    service_events: watch::Sender<IronClusterEvent>,             // 本地服务表事件通知源。
+}
+
+impl IronClusterHandle {
+    // 创建集群本地运行句柄。
+    pub(crate) fn new() -> Self {
+        let (service_events, _) = watch::channel(IronClusterEvent::ServicesChanged);
+
+        Self {
+            services: Arc::new(RwLock::new(BTreeMap::new())),
+            service_events,
+        }
+    }
+
+    // 读取当前本地服务表快照。
+    pub async fn services(&self) -> BTreeMap<String, IronClusterService> {
+        self.services.read().await.clone()
+    }
+
+    // 按业务服务类型读取当前本地服务实例。
+    pub async fn find_by_kind(&self, biz_kind: BizServiceKind) -> Vec<IronClusterService> {
+        self.services
+            .read()
+            .await
+            .values()
+            .filter(|service| service.biz_kind == biz_kind)
+            .cloned()
+            .collect()
+    }
+
+    // 订阅本地服务发现事件。
+    pub fn subscribe(&self) -> watch::Receiver<IronClusterEvent> {
+        self.service_events.subscribe()
+    }
+
+    // 更新当前本地服务表快照，并返回是否发生变化。
+    pub(crate) async fn update_services(
+        &self,
+        services: BTreeMap<String, IronClusterService>,
+    ) -> bool {
+        let mut current = self.services.write().await;
+        if *current == services {
+            return false;
+        }
+
+        *current = services;
+        let _ = self.service_events.send(IronClusterEvent::ServicesChanged);
+        true
+    }
+}
+
 // 集群状态写命令。
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ClusterCommand {
@@ -112,5 +176,39 @@ fn next_biz_service_id(
         if !data.contains_key(&biz_service_id) {
             return biz_service_id;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 验证集群本地运行句柄可以读取和订阅服务表变化。
+    #[tokio::test]
+    async fn cluster_handle_can_read_and_subscribe_services() {
+        let handle = IronClusterHandle::new();
+        let mut events = handle.subscribe();
+        let mut services = BTreeMap::new();
+
+        services.insert(
+            "gate-1".to_string(),
+            IronClusterService {
+                raft_id: None,
+                raft_role: None,
+                raft_addr: None,
+                raft_epoch: None,
+                raft_alive_at_ms: None,
+                biz_kind: BizServiceKind::Gate,
+                biz_service_id: "gate-1".to_string(),
+                biz_services: Vec::new(),
+            },
+        );
+
+        assert!(handle.update_services(services).await);
+        events.changed().await.expect("服务发现事件接收失败");
+
+        let gate_services = handle.find_by_kind(BizServiceKind::Gate).await;
+        assert_eq!(gate_services.len(), 1);
+        assert_eq!(handle.services().await.len(), 1);
     }
 }
