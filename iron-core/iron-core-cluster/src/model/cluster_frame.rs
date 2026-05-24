@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum ClusterFrameKind {
     RegisterService, // 工作节点注册服务。
     Heartbeat,       // 工作节点心跳。
+    ClusterSnapshot, // 注册中心推送当前服务表快照。
     RaftAppend,      // Raft 日志复制请求。
     RaftVote,        // Raft 投票请求。
     Error,           // 协议错误响应。
@@ -18,6 +19,7 @@ impl ClusterFrameKind {
         match self {
             Self::RegisterService => 1,
             Self::Heartbeat => 2,
+            Self::ClusterSnapshot => 3,
             Self::RaftAppend => 10,
             Self::RaftVote => 11,
             Self::Error => u16::MAX,
@@ -29,6 +31,7 @@ impl ClusterFrameKind {
         match code {
             1 => Some(Self::RegisterService),
             2 => Some(Self::Heartbeat),
+            3 => Some(Self::ClusterSnapshot),
             10 => Some(Self::RaftAppend),
             11 => Some(Self::RaftVote),
             u16::MAX => Some(Self::Error),

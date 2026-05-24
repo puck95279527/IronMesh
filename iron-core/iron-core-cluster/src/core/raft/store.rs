@@ -26,6 +26,16 @@ impl IronRaftStore {
     pub(crate) async fn registry_snapshot(&self) -> BTreeMap<String, IronClusterService> {
         self.inner.read().await.registry.clone()
     }
+
+    // 读取当前服务注册表快照版本。
+    pub(crate) async fn registry_snapshot_version(&self) -> u64 {
+        self.inner
+            .read()
+            .await
+            .last_applied_log_id
+            .map(|log_id| log_id.index)
+            .unwrap_or_default()
+    }
 }
 
 impl RaftLogReader<IronRaftTypeConfig> for IronRaftStore {
@@ -148,7 +158,10 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStore {
     }
 
     // 应用已提交的 Raft 日志到状态机。
-    async fn apply<I>(&mut self, entries: I) -> Result<Vec<()>, StorageError<u64>>
+    async fn apply<I>(
+        &mut self,
+        entries: I,
+    ) -> Result<Vec<Option<IronClusterService>>, StorageError<u64>>
     where
         I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig>> + Send,
         I::IntoIter: Send,
@@ -159,14 +172,17 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStore {
         for entry in entries {
             inner.last_applied_log_id = Some(entry.log_id);
             match entry.payload {
-                EntryPayload::Blank => results.push(()),
+                EntryPayload::Blank => results.push(None),
                 EntryPayload::Membership(membership) => {
                     inner.last_membership = StoredMembership::new(Some(entry.log_id), membership);
-                    results.push(());
+                    results.push(None);
                 }
                 EntryPayload::Normal(command) => {
-                    command.apply_to(&mut inner.registry);
-                    results.push(());
+                    let result = {
+                        let inner = &mut *inner;
+                        command.apply_to(&mut inner.registry, &mut inner.biz_service_counters)
+                    };
+                    results.push(result);
                 }
             }
         }
@@ -197,6 +213,7 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStore {
         inner.last_applied_log_id = raft_state.last_applied_log_id;
         inner.last_membership = raft_state.last_membership;
         inner.registry = raft_state.registry;
+        inner.biz_service_counters = raft_state.biz_service_counters;
         inner.snapshot = Some(Snapshot {
             meta: meta.clone(),
             snapshot,
@@ -221,6 +238,7 @@ impl RaftSnapshotBuilder<IronRaftTypeConfig> for IronRaftStore {
             last_applied_log_id: inner.last_applied_log_id,
             last_membership: inner.last_membership.clone(),
             registry: inner.registry.clone(),
+            biz_service_counters: inner.biz_service_counters.clone(),
         };
         let snapshot = serde_json::to_vec(&data).map_err(|error| snapshot_storage_error(error))?;
         let snapshot_id = format!(

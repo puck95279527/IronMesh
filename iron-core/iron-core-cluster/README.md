@@ -41,6 +41,7 @@
 
 | 类型 | 成员 | 作用 |
 |---|---|---|
+| `ClusterCommand` | `Register(IronClusterService)` | 注册服务，并在实例 ID 为空时由注册中心分配自增 ID。 |
 | `ClusterCommand` | `Upsert(IronClusterService)` | 注册或更新服务。 |
 | `ClusterCommand` | `Offline.biz_service_id` | 标记下线的业务服务实例 ID。 |
 
@@ -50,6 +51,7 @@
 |---|---|---|
 | `ClusterFrameKind` | `RegisterService` | 工作节点注册服务。 |
 | `ClusterFrameKind` | `Heartbeat` | 工作节点心跳。 |
+| `ClusterFrameKind` | `ClusterSnapshot` | 注册中心推送当前服务表快照。 |
 | `ClusterFrameKind` | `RaftAppend` | Raft 日志复制请求。 |
 | `ClusterFrameKind` | `RaftVote` | Raft 投票请求。 |
 | `ClusterFrameKind` | `Error` | 协议错误响应。 |
@@ -114,7 +116,7 @@
 | 类型 | 字段 | 作用 |
 |---|---|---|
 | `IronRaftTypeConfig` | `D` | Raft 写命令类型，当前为 `ClusterCommand`。 |
-| `IronRaftTypeConfig` | `R` | Raft 写命令返回类型，当前为 `()`。 |
+| `IronRaftTypeConfig` | `R` | Raft 写命令返回类型，当前为 `Option<IronClusterService>`。 |
 | `IronRaftTypeConfig` | `NodeId` | Raft 节点 ID 类型。 |
 | `IronRaftTypeConfig` | `Node` | Raft 节点网络信息类型。 |
 | `IronRaftTypeConfig` | `Entry` | Raft 日志条目类型。 |
@@ -137,6 +139,7 @@
 | `IronRaftStoreInner` | `last_applied_log_id` | 状态机已应用的最后日志 ID。 |
 | `IronRaftStoreInner` | `last_membership` | 状态机已应用的最后成员配置。 |
 | `IronRaftStoreInner` | `registry` | 状态机中的 `BTreeMap<String, IronClusterService>`。 |
+| `IronRaftStoreInner` | `biz_service_counters` | 业务服务实例自增计数器。 |
 | `IronRaftStoreInner` | `snapshot` | 当前状态机快照。 |
 
 ## IronClusterRaftState
@@ -146,6 +149,7 @@
 | `IronClusterRaftState` | `last_applied_log_id` | 状态机已应用的最后日志 ID。 |
 | `IronClusterRaftState` | `last_membership` | 状态机当前成员配置。 |
 | `IronClusterRaftState` | `registry` | 状态机当前服务注册表。 |
+| `IronClusterRaftState` | `biz_service_counters` | 状态机当前业务服务实例自增计数器。 |
 
 ## IronRaftNetworkFactory
 

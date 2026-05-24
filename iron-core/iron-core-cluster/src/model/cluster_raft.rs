@@ -1,5 +1,6 @@
 // 集群 Raft 数据模型。
 
+use super::BizServiceKind;
 use super::ClusterCommand;
 use super::IronClusterService;
 use openraft::LogId;
@@ -16,7 +17,7 @@ openraft::declare_raft_types!(
     // IronMesh 集群 Raft 类型配置。
     pub IronRaftTypeConfig:
         D = ClusterCommand,
-        R = (),
+        R = Option<IronClusterService>,
         NodeId = u64,
         Node = BasicNode,
         Entry = openraft::Entry<IronRaftTypeConfig>,
@@ -39,6 +40,7 @@ pub struct IronRaftStoreInner {
     pub last_applied_log_id: Option<LogId<u64>>, // 状态机已应用的最后日志 ID。
     pub last_membership: StoredMembership<u64, BasicNode>, // 状态机已应用的最后成员配置。
     pub registry: BTreeMap<String, IronClusterService>, // 状态机中的服务注册表。
+    pub biz_service_counters: BTreeMap<BizServiceKind, u64>, // 业务服务实例自增计数器。
     pub snapshot: Option<Snapshot<IronRaftTypeConfig>>, // 当前状态机快照。
 }
 
@@ -53,6 +55,7 @@ impl Default for IronRaftStoreInner {
             last_applied_log_id: None,
             last_membership: StoredMembership::default(),
             registry: BTreeMap::default(),
+            biz_service_counters: BTreeMap::default(),
             snapshot: None,
         }
     }
@@ -64,4 +67,5 @@ pub struct IronClusterRaftState {
     pub last_applied_log_id: Option<LogId<u64>>, // 状态机已应用的最后日志 ID。
     pub last_membership: StoredMembership<u64, BasicNode>, // 状态机当前成员配置。
     pub registry: BTreeMap<String, IronClusterService>, // 状态机当前服务注册表。
+    pub biz_service_counters: BTreeMap<BizServiceKind, u64>, // 状态机当前业务服务实例自增计数器。
 }

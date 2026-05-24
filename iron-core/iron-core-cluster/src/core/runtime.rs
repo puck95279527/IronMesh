@@ -25,6 +25,7 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
@@ -90,6 +91,7 @@ pub(crate) async fn start_worker(
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let local_addr = listener.local_addr()?;
     let record = worker_service_record(biz_kind, &biz_service_id, local_addr);
+    let service_cache = Arc::new(RwLock::new(BTreeMap::new()));
 
     tokio::spawn(async move {
         loop {
@@ -112,7 +114,13 @@ pub(crate) async fn start_worker(
 
     loop {
         for registry_node in &registry_nodes {
-            match maintain_registry_connection(&registry_node.tcp_addr, &record).await {
+            match maintain_registry_connection(
+                &registry_node.tcp_addr,
+                &record,
+                service_cache.clone(),
+            )
+            .await
+            {
                 Ok(()) => {}
                 Err(error) => {
                     warn!(
@@ -266,12 +274,21 @@ async fn handle_worker_connection(
     service: IronClusterService,
     all_nodes: Vec<ClusterRegistryRuntimeNode>,
 ) -> Result<(), ClusterError> {
-    write_command_to_any_raft(&all_nodes, ClusterCommand::Upsert(service.clone())).await?;
-    info!(biz_service_id = %service.biz_service_id, "工作节点注册成功");
+    let Some(registered_service) =
+        write_command_to_any_raft(&all_nodes, ClusterCommand::Register(service)).await?
+    else {
+        return Err(ClusterError::Protocol(
+            "工作节点注册没有返回服务实例".to_string(),
+        ));
+    };
+    write_cluster_snapshot(&mut stream, &all_nodes).await?;
+    info!(biz_service_id = %registered_service.biz_service_id, "工作节点注册成功");
 
     loop {
         match crate::core::tcp::read_frame(&mut stream).await {
-            Ok((ClusterFrameKind::Heartbeat, _)) => {}
+            Ok((ClusterFrameKind::Heartbeat, _)) => {
+                write_cluster_snapshot(&mut stream, &all_nodes).await?;
+            }
             Ok((_kind, _body)) => {
                 return Err(ClusterError::Protocol(
                     "工作节点长连接收到非心跳帧".to_string(),
@@ -285,11 +302,11 @@ async fn handle_worker_connection(
     write_command_to_any_raft(
         &all_nodes,
         ClusterCommand::Offline {
-            biz_service_id: service.biz_service_id.clone(),
+            biz_service_id: registered_service.biz_service_id.clone(),
         },
     )
     .await?;
-    info!(biz_service_id = %service.biz_service_id, "工作节点已下线");
+    info!(biz_service_id = %registered_service.biz_service_id, "工作节点已下线");
 
     Ok(())
 }
@@ -298,7 +315,7 @@ async fn handle_worker_connection(
 async fn write_command_to_any_raft(
     nodes: &[ClusterRegistryRuntimeNode],
     command: ClusterCommand,
-) -> Result<(), ClusterError> {
+) -> Result<Option<IronClusterService>, ClusterError> {
     for _ in 0..30 {
         if let Some(leader_id) = first_known_leader(nodes).await
             && let Some(node) = nodes.iter().find(|node| node.raft_node_id == leader_id)
@@ -332,6 +349,34 @@ async fn first_known_leader(nodes: &[ClusterRegistryRuntimeNode]) -> Option<u64>
     None
 }
 
+// 向工作节点写入当前服务表快照。
+async fn write_cluster_snapshot(
+    stream: &mut TcpStream,
+    nodes: &[ClusterRegistryRuntimeNode],
+) -> Result<(), ClusterError> {
+    let snapshot = best_registry_snapshot(nodes).await;
+    crate::core::tcp::write_json_frame(stream, ClusterFrameKind::ClusterSnapshot, &snapshot).await
+}
+
+// 读取当前可见的最大服务表快照。
+async fn best_registry_snapshot(
+    nodes: &[ClusterRegistryRuntimeNode],
+) -> BTreeMap<String, IronClusterService> {
+    let mut best_snapshot = None;
+    let mut best_version = 0;
+
+    for node in nodes {
+        let version = node.store.registry_snapshot_version().await;
+        let snapshot = node.store.registry_snapshot().await;
+        if best_snapshot.is_none() || version >= best_version {
+            best_version = version;
+            best_snapshot = Some(snapshot);
+        }
+    }
+
+    best_snapshot.unwrap_or_default()
+}
+
 // 启动注册中心验证 HTTP 服务。
 async fn start_registry_debug_http(
     listener: TcpListener,
@@ -350,15 +395,30 @@ async fn start_registry_debug_http(
 async fn maintain_registry_connection(
     registry_addr: &str,
     record: &IronClusterService,
+    service_cache: Arc<RwLock<BTreeMap<String, IronClusterService>>>,
 ) -> Result<(), ClusterError> {
-    let mut stream = TcpStream::connect(registry_addr).await?;
-    crate::core::tcp::write_json_frame(&mut stream, ClusterFrameKind::RegisterService, record)
+    let stream = TcpStream::connect(registry_addr).await?;
+    let (mut reader, mut writer) = stream.into_split();
+    crate::core::tcp::write_json_frame(&mut writer, ClusterFrameKind::RegisterService, record)
         .await?;
 
     loop {
-        sleep(Duration::from_millis(500)).await;
-        crate::core::tcp::write_json_frame(&mut stream, ClusterFrameKind::Heartbeat, record)
-            .await?;
+        tokio::select! {
+            _ = sleep(Duration::from_millis(500)) => {
+                crate::core::tcp::write_json_frame(&mut writer, ClusterFrameKind::Heartbeat, record)
+                    .await?;
+            }
+            result = crate::core::tcp::read_json_frame::<_, BTreeMap<String, IronClusterService>>(&mut reader) => {
+                let (kind, snapshot) = result?;
+                if kind != ClusterFrameKind::ClusterSnapshot {
+                    return Err(ClusterError::Protocol("工作节点收到非服务表快照帧".to_string()));
+                }
+
+                let snapshot_len = snapshot.len();
+                *service_cache.write().await = snapshot;
+                info!(snapshot_len = snapshot_len, "工作节点服务发现缓存已更新");
+            }
+        }
     }
 }
 
@@ -457,7 +517,8 @@ mod tests {
     #[test]
     fn registry_can_register_service() {
         let mut registry = BTreeMap::default();
-        ClusterCommand::Upsert(test_record()).apply_to(&mut registry);
+        let mut counters = BTreeMap::default();
+        ClusterCommand::Upsert(test_record()).apply_to(&mut registry, &mut counters);
 
         assert_eq!(registry.len(), 1);
         assert!(registry.contains_key("gate-1"));
@@ -467,13 +528,37 @@ mod tests {
     #[test]
     fn registry_can_unregister_service() {
         let mut registry = BTreeMap::default();
-        ClusterCommand::Upsert(test_record()).apply_to(&mut registry);
+        let mut counters = BTreeMap::default();
+        ClusterCommand::Upsert(test_record()).apply_to(&mut registry, &mut counters);
         ClusterCommand::Offline {
             biz_service_id: "gate-1".to_string(),
         }
-        .apply_to(&mut registry);
+        .apply_to(&mut registry, &mut counters);
 
         assert!(registry.is_empty());
+    }
+
+    // 验证注册中心可以为同类服务分配不冲突的自增实例 ID。
+    #[test]
+    fn registry_can_allocate_worker_service_id() {
+        let mut registry = BTreeMap::default();
+        let mut counters = BTreeMap::default();
+        let mut first = test_record();
+        let mut second = test_record();
+
+        first.biz_service_id.clear();
+        second.biz_service_id.clear();
+
+        let first_result = ClusterCommand::Register(first)
+            .apply_to(&mut registry, &mut counters)
+            .expect("第一个服务实例注册失败");
+        let second_result = ClusterCommand::Register(second)
+            .apply_to(&mut registry, &mut counters)
+            .expect("第二个服务实例注册失败");
+
+        assert_eq!(first_result.biz_service_id, "gate-1");
+        assert_eq!(second_result.biz_service_id, "gate-2");
+        assert_eq!(registry.len(), 2);
     }
 
     // 验证注册中心服务记录包含 Raft 字段。
@@ -495,6 +580,18 @@ mod tests {
         assert_eq!(service.biz_kind, BizServiceKind::GamePdk);
         assert_eq!(service.raft_id, None);
         assert_eq!(service.raft_addr, None);
+    }
+
+    // 验证工作节点服务记录序列化时不会输出空 Raft 字段。
+    #[test]
+    fn worker_service_json_skips_empty_raft_fields() {
+        let local_addr: SocketAddr = "127.0.0.1:9000".parse().expect("监听地址无效");
+        let service = worker_service_record(BizServiceKind::GamePdk, "game_pdk-1001", local_addr);
+        let json = serde_json::to_string(&service).expect("服务记录序列化失败");
+
+        assert!(!json.contains("raft_id"));
+        assert!(!json.contains("raft_role"));
+        assert!(!json.contains("raft_addr"));
     }
 
     // 构造测试服务注册记录。

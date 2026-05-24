@@ -23,14 +23,14 @@ pub enum BizServiceKind {
 }
 
 impl BizServiceKind {
-    // 返回默认业务服务实例 ID。
-    pub fn default_biz_service_id(self) -> &'static str {
+    // 返回业务服务实例 ID 前缀。
+    pub(crate) fn service_id_prefix(self) -> &'static str {
         match self {
-            Self::Registry => "registry-1",
-            Self::Gate => "gate-1",
-            Self::Auth => "auth-1",
-            Self::GamePdk => "game_pdk-1001",
-            Self::GameDdz => "game_ddz-1001",
+            Self::Registry => "registry",
+            Self::Gate => "gate",
+            Self::Auth => "auth",
+            Self::GamePdk => "game_pdk",
+            Self::GameDdz => "game_ddz",
         }
     }
 }
@@ -45,20 +45,26 @@ pub struct BizService {
 // Raft 与业务服务实例。
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IronClusterService {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub raft_id: Option<u64>, // Raft 服务实例 ID，只有 registry Raft 节点有值。
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub raft_role: Option<RaftServiceRole>, // Raft 当前角色，worker 服务为 None。
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub raft_addr: Option<String>, // Raft 通信地址，worker 服务为 None。
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub raft_epoch: Option<u64>, // Raft 实例启动代次，worker 服务为 None。
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub raft_alive_at_ms: Option<u64>, // Raft 最近心跳时间，worker 服务为 None。
-    pub biz_kind: BizServiceKind, // 业务服务类型。
-    pub biz_service_id: String, // 业务服务实例 ID，例如 game_pdk-1001。
+    pub biz_kind: BizServiceKind,      // 业务服务类型。
+    pub biz_service_id: String,        // 业务服务实例 ID，例如 game_pdk-1001。
     pub biz_services: Vec<BizService>, // 当前实例暴露的业务端点列表。
 }
 
 // 集群状态写命令。
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ClusterCommand {
-    Upsert(IronClusterService), // 注册或更新服务。
+    Register(IronClusterService), // 注册服务，并在实例 ID 为空时由注册中心分配自增 ID。
+    Upsert(IronClusterService),   // 注册或更新服务。
     Offline {
         biz_service_id: String, // 标记下线的业务服务实例 ID。
     },
@@ -66,14 +72,45 @@ pub enum ClusterCommand {
 
 impl ClusterCommand {
     // 应用命令到集群状态表。
-    pub(crate) fn apply_to(self, data: &mut BTreeMap<String, IronClusterService>) {
+    pub(crate) fn apply_to(
+        self,
+        data: &mut BTreeMap<String, IronClusterService>,
+        counters: &mut BTreeMap<BizServiceKind, u64>,
+    ) -> Option<IronClusterService> {
         match self {
+            Self::Register(mut service) => {
+                if service.biz_service_id.is_empty() {
+                    service.biz_service_id = next_biz_service_id(service.biz_kind, data, counters);
+                }
+
+                data.insert(service.biz_service_id.clone(), service.clone());
+                Some(service)
+            }
             Self::Upsert(service) => {
                 data.insert(service.biz_service_id.clone(), service);
+                None
             }
             Self::Offline { biz_service_id } => {
                 data.remove(&biz_service_id);
+                None
             }
+        }
+    }
+}
+
+// 分配下一个业务服务实例 ID。
+fn next_biz_service_id(
+    biz_kind: BizServiceKind,
+    data: &BTreeMap<String, IronClusterService>,
+    counters: &mut BTreeMap<BizServiceKind, u64>,
+) -> String {
+    loop {
+        let next = counters.entry(biz_kind).or_default();
+        *next += 1;
+
+        let biz_service_id = format!("{}-{}", biz_kind.service_id_prefix(), next);
+        if !data.contains_key(&biz_service_id) {
+            return biz_service_id;
         }
     }
 }

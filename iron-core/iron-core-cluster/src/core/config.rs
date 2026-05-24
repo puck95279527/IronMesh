@@ -35,8 +35,7 @@ pub(crate) fn run_worker_from_local_toml(biz_kind: BizServiceKind) -> Result<(),
     let seed_config_path = local_seed_config_path()?;
     let seed_config = ClusterSeedConfig::from_toml_file(seed_config_path)?;
     let cluster_id = read_env_or_string("IRON_CLUSTER_ID", "ironmesh-local");
-    let biz_service_id =
-        read_env_or_string("IRON_BIZ_SERVICE_ID", biz_kind.default_biz_service_id());
+    let biz_service_id = env::var("IRON_BIZ_SERVICE_ID").unwrap_or_default();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
