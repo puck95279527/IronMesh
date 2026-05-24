@@ -37,14 +37,14 @@ impl IronRaftTcpServer {
     pub async fn serve(self, tcp_addr: String) -> Result<(), Box<dyn std::error::Error>> {
         let addr = tcp_addr.parse::<SocketAddr>()?;
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        tracing::info!(%tcp_addr, "启动 IronMesh Raft TCP 服务");
+        tracing::info!(%tcp_addr, "[Iron] [cluster] 启动 Raft TCP 服务");
 
         loop {
             let (mut stream, peer_addr) = listener.accept().await?;
             let raft = self.raft.clone();
             tokio::spawn(async move {
                 if let Err(error) = Self::handle_connection(raft, &mut stream).await {
-                    tracing::warn!(%peer_addr, %error, "处理 Raft TCP 连接失败");
+                    tracing::warn!(%peer_addr, %error, "[Iron] [cluster] 处理 Raft TCP 连接失败");
                 }
             });
         }
@@ -186,11 +186,11 @@ impl IronRaftTcpServer {
             .get_node(&node_id)
             .is_some()
         {
-            tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "节点已经在集群中");
+            tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "[Iron] [cluster] 节点已经在集群中");
             return Ok(());
         }
 
-        tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "开始加入节点到集群");
+        tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "[Iron] [cluster] 开始加入节点到集群");
 
         raft.add_learner(node_id, openraft::BasicNode::new(node_addr.clone()), true)
             .await
@@ -200,7 +200,7 @@ impl IronRaftTcpServer {
             .await
             .map_err(|error| error.to_string())?;
 
-        tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "节点已加入集群");
+        tracing::info!(node_id = node_id, node_name = %node_name, node_addr = %node_addr, "[Iron] [cluster] 节点已加入集群");
         Ok(())
     }
 }

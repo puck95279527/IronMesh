@@ -1,6 +1,4 @@
 // 打印当前认证节点身份。
 fn main() {
-    tracing_subscriber::fmt::init();
-    tracing::info!("cluster-auth-1");
-    
+    iron_core_cluster_v2::logging::init_cluster_logging();
 }

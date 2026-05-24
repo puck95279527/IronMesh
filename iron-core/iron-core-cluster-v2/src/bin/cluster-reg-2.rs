@@ -3,11 +3,12 @@
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::BTreeMap;
 
+    use iron_core_cluster_v2::logging::init_cluster_logging;
     use iron_core_cluster_v2::raft::cluster::iron_raft_boot_node::IronRaftBootNode;
     use iron_core_cluster_v2::raft::cluster::iron_raft_cluster_manager::IronRaftClusterManager;
     use iron_core_cluster_v2::raft::cluster::iron_raft_node::IronRaftNode;
 
-    tracing_subscriber::fmt::init();
+    init_cluster_logging();
     let boot_nodes = BTreeMap::from([
         (1, IronRaftBootNode::new(1, "127.0.0.1:5001")),
         (2, IronRaftBootNode::new(2, "127.0.0.1:5002")),

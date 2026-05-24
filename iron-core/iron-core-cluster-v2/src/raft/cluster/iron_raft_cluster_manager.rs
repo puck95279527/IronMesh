@@ -45,14 +45,26 @@ impl IronRaftClusterManager {
     pub async fn run(self) -> Result<(), Box<dyn Error>> {
         // 1. 校验当前节点和启动节点表。
         self.validate_topology()?;
+        tracing::info!(
+            node_id = self.current_node.node_id,
+            node_name = %self.current_node.node_name,
+            node_addr = %self.current_node.node_addr,
+            "[Iron] [cluster] 校验节点配置完成"
+        );
 
         // 2. 创建当前节点的 Raft 实例和 TCP 服务。
         let (raft, tcp_server, node_addr) = self.build_raft_runtime().await?;
+        tracing::info!(
+            node_id = self.current_node.node_id,
+            node_name = %self.current_node.node_name,
+            node_addr = %self.current_node.node_addr,
+            "[Iron] [cluster] 已创建 Raft 运行时"
+        );
 
         // 3. 启动当前节点的 Raft TCP 服务。
         let _server_task = tokio::spawn(async move {
-            if let Err(error) = tcp_server.serve(node_addr).await {
-                tracing::warn!(%error, "Raft TCP 服务退出");
+                if let Err(error) = tcp_server.serve(node_addr).await {
+                tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
             }
         });
 
@@ -106,7 +118,7 @@ impl IronRaftClusterManager {
             node_id = node_id,
             node_name = %node_name,
             node_addr = %node_addr,
-            "启动 IronMesh Raft 集群节点"
+            "[Iron] [cluster] 启动 Raft 集群节点"
         );
 
         Ok((raft.clone(), IronRaftTcpServer::new(raft), node_addr))
@@ -114,6 +126,13 @@ impl IronRaftClusterManager {
 
     // 尝试加入已有集群；如果加入成功，返回 false；如果抢到起盘资格，返回 true。
     async fn bootstrap_or_join_cluster(&self, raft: &Raft<IronRaftTypeConfig>) -> Result<bool, Box<dyn Error>> {
+        tracing::info!(
+            node_id = self.current_node.node_id,
+            node_name = %self.current_node.node_name,
+            node_addr = %self.current_node.node_addr,
+            "[Iron] [cluster] 正在探测是否存在已有集群"
+        );
+
         loop {
             // 4.1 先尝试请求已有节点，把当前节点加入集群。
             let mut saw_peer = false;
@@ -143,7 +162,7 @@ impl IronRaftClusterManager {
                             node_addr = %self.current_node.node_addr,
                             target_id = *peer_id,
                             target_addr = %peer.node_addr,
-                            "当前节点已加入已有集群"
+                            "[Iron] [cluster] 当前节点已加入已有集群"
                         );
                         return Ok(false);
                     }
@@ -158,7 +177,7 @@ impl IronRaftClusterManager {
                             target_id = *peer_id,
                             target_addr = %peer.node_addr,
                             %error,
-                            "已有节点暂时不可加入，稍后重试"
+                            "[Iron] [cluster] 已有节点暂时不可加入，稍后重试"
                         );
                     }
                 }
@@ -166,20 +185,44 @@ impl IronRaftClusterManager {
 
             // 4.2 如果已经看到别的节点存在，就先等一等，不抢起盘资格。
             if saw_peer {
+                tracing::info!(
+                    node_id = self.current_node.node_id,
+                    node_name = %self.current_node.node_name,
+                    node_addr = %self.current_node.node_addr,
+                    "[Iron] [cluster] 已发现可加入的集群节点，稍后重试"
+                );
                 tokio::time::sleep(Duration::from_millis(800)).await;
                 continue;
             }
 
             // 4.3 没有看到任何已有节点时，尝试抢占 bootstrap 资格。
+            tracing::info!(
+                node_id = self.current_node.node_id,
+                node_name = %self.current_node.node_name,
+                node_addr = %self.current_node.node_addr,
+                "[Iron] [cluster] 未发现可加入的集群节点，准备争抢起盘资格"
+            );
             let bootstrap_lock = match tokio::net::TcpListener::bind(BOOTSTRAP_LOCK_ADDR).await {
                 Ok(lock) => lock,
                 Err(_) => {
+                    tracing::info!(
+                        node_id = self.current_node.node_id,
+                        node_name = %self.current_node.node_name,
+                        node_addr = %self.current_node.node_addr,
+                        "[Iron] [cluster] 起盘资格被其他节点占用，稍后重试"
+                    );
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     continue;
                 }
             };
 
             // 4.4 抢到资格后再确认一遍是否已经有人先起盘。
+            tracing::info!(
+                node_id = self.current_node.node_id,
+                node_name = %self.current_node.node_name,
+                node_addr = %self.current_node.node_addr,
+                "[Iron] [cluster] 已获得起盘资格"
+            );
             let mut saw_peer_after_lock = false;
             for (peer_id, peer) in &self.boot_nodes {
                 if *peer_id == self.current_node.node_id {
@@ -207,7 +250,7 @@ impl IronRaftClusterManager {
                             node_addr = %self.current_node.node_addr,
                             target_id = *peer_id,
                             target_addr = %peer.node_addr,
-                            "当前节点已加入已有集群"
+                            "[Iron] [cluster] 当前节点已加入已有集群"
                         );
                         drop(bootstrap_lock);
                         return Ok(false);
@@ -223,7 +266,7 @@ impl IronRaftClusterManager {
                             target_id = *peer_id,
                             target_addr = %peer.node_addr,
                             %error,
-                            "已有节点暂时不可加入，稍后重试"
+                            "[Iron] [cluster] 已有节点暂时不可加入，稍后重试"
                         );
                     }
                 }
@@ -236,6 +279,12 @@ impl IronRaftClusterManager {
             }
 
             // 4.5 仍然没有发现已有集群时，把当前节点初始化成最小集群。
+            tracing::info!(
+                node_id = self.current_node.node_id,
+                node_name = %self.current_node.node_name,
+                node_addr = %self.current_node.node_addr,
+                "[Iron] [cluster] 正在初始化最小集群"
+            );
             let init_members = BTreeMap::from([(
                 self.current_node.node_id,
                 openraft::BasicNode::new(self.current_node.node_addr.clone()),
@@ -244,17 +293,23 @@ impl IronRaftClusterManager {
             tokio::time::sleep(Duration::from_millis(200)).await;
             if let Err(error) = raft.initialize(init_members).await {
                 drop(bootstrap_lock);
-                tracing::warn!(%error, "初始化 IronMesh Raft 集群失败");
+                tracing::warn!(%error, "[Iron] [cluster] 初始化 Raft 集群失败");
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
             }
 
+            tracing::info!(
+                node_id = self.current_node.node_id,
+                node_name = %self.current_node.node_name,
+                node_addr = %self.current_node.node_addr,
+                "[Iron] [cluster] 已完成最小集群初始化"
+            );
             drop(bootstrap_lock);
             tracing::info!(
                 node_id = self.current_node.node_id,
                 node_name = %self.current_node.node_name,
                 node_addr = %self.current_node.node_addr,
-                "当前节点已成为 bootstrap owner"
+                "[Iron] [cluster] 已成为起盘节点"
             );
             return Ok(true);
         }
@@ -263,6 +318,12 @@ impl IronRaftClusterManager {
     // 如果当前节点是 bootstrap owner，就把其余节点逐个加入集群。
     async fn join_remaining_nodes(&self, raft: &Raft<IronRaftTypeConfig>) -> Result<(), Box<dyn Error>> {
         // 5.1 等待当前节点真正成为 Leader。
+        tracing::info!(
+            node_id = self.current_node.node_id,
+            node_name = %self.current_node.node_name,
+            node_addr = %self.current_node.node_addr,
+            "[Iron] [cluster] 正在等待当前节点成为领导节点"
+        );
         if let Err(error) = raft
             .wait(None)
             .state(ServerState::Leader, "等待 bootstrap 节点成为 Leader")
@@ -270,6 +331,12 @@ impl IronRaftClusterManager {
         {
             return Err(IoError::new(ErrorKind::Other, error.to_string()).into());
         }
+        tracing::info!(
+            node_id = self.current_node.node_id,
+            node_name = %self.current_node.node_name,
+            node_addr = %self.current_node.node_addr,
+            "[Iron] [cluster] 已确认当前节点成为领导节点"
+        );
 
         // 5.2 依次把其余启动节点加入集群。
         let mut did_progress = false;
@@ -292,7 +359,7 @@ impl IronRaftClusterManager {
                             target_id = *target_id,
                             target_addr = %target_node.node_addr,
                             %error,
-                            "加入 learner 失败，稍后重试"
+                            "[Iron] [cluster] 加入 learner 失败，稍后重试"
                         );
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
@@ -310,7 +377,7 @@ impl IronRaftClusterManager {
                             target_id = *target_id,
                             target_addr = %target_node.node_addr,
                             %error,
-                            "提升为 voter 失败，稍后重试"
+                            "[Iron] [cluster] 提升为 voter 失败，稍后重试"
                         );
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
@@ -320,7 +387,7 @@ impl IronRaftClusterManager {
             tracing::info!(
                 target_id = *target_id,
                 target_addr = %target_node.node_addr,
-                "节点已逐个加入集群"
+                "[Iron] [cluster] 节点已逐个加入集群"
             );
             did_progress = true;
         }
@@ -329,6 +396,12 @@ impl IronRaftClusterManager {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
+        tracing::info!(
+            node_id = self.current_node.node_id,
+            node_name = %self.current_node.node_name,
+            node_addr = %self.current_node.node_addr,
+            "[Iron] [cluster] 集群启动流程完成"
+        );
         Ok(())
     }
 

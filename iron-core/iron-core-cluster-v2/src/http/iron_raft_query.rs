@@ -30,9 +30,9 @@ pub async fn start_query_http(
     let health_url = format!("{query_url}/health");
     let metrics_url = format!("{query_url}/raft/metrics");
 
-    tracing::info!(node_id, %query_url, "启动 IronMesh Raft 查询 HTTP 服务");
-    tracing::info!(node_id, %health_url, "IronMesh Raft 查询健康检查地址");
-    tracing::info!(node_id, %metrics_url, "IronMesh Raft 查询指标地址");
+    tracing::info!(node_id, %query_url, "[Iron] [cluster] 启动 Raft 查询 HTTP 服务");
+    tracing::info!(node_id, %health_url, "[Iron] [cluster] Raft 查询健康检查地址");
+    tracing::info!(node_id, %metrics_url, "[Iron] [cluster] Raft 查询指标地址");
     axum::serve(listener, router).await?;
 
     Ok(())

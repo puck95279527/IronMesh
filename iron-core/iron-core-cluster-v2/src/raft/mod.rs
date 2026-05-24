@@ -46,12 +46,12 @@ pub async fn start_iron_raft_node(
     let query_raft = raft.clone();
     let tcp_server = IronRaftTcpServer::new(raft);
 
-    tracing::info!(node_id, %tcp_addr, "启动 IronMesh Raft 节点");
+    tracing::info!(node_id, %tcp_addr, "[Iron] [cluster] 启动 Raft 节点");
     if node_id == 1 {
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             if let Err(error) = init_raft.initialize(initial_members()).await {
-                tracing::warn!(%error, "初始化 IronMesh Raft 集群失败");
+                tracing::warn!(%error, "[Iron] [cluster] 初始化 Raft 集群失败");
             }
         });
     }
@@ -59,7 +59,7 @@ pub async fn start_iron_raft_node(
     if query_port != 0 {
         tokio::spawn(async move {
             if let Err(error) = crate::http::iron_raft_query::start_query_http(node_id, query_port, query_raft).await {
-                tracing::warn!(%error, "IronMesh Raft 查询 HTTP 服务退出");
+                tracing::warn!(%error, "[Iron] [cluster] Raft 查询 HTTP 服务退出");
             }
         });
     }
