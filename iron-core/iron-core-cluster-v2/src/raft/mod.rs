@@ -2,23 +2,13 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::Json;
-use axum::Router;
-use axum::extract::State;
-use axum::routing::post;
 use openraft::Config;
 use openraft::Raft;
-use openraft::error::RaftError;
-use openraft::raft::AppendEntriesRequest;
-use openraft::raft::AppendEntriesResponse;
-use openraft::raft::InstallSnapshotRequest;
-use openraft::raft::InstallSnapshotResponse;
-use openraft::raft::VoteRequest;
-use openraft::raft::VoteResponse;
 
 use crate::raft::model::iron_raft_log_store::IronRaftLogStore;
 use crate::raft::model::iron_raft_state_machine_store::IronRaftStateMachineStore;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::network::iron_raft_http_server::IronRaftHttpServer;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
 
 // Raft 能力模块入口。
@@ -52,11 +42,7 @@ pub async fn start_iron_raft_node(
 
     let init_raft = raft.clone();
     let query_raft = raft.clone();
-    let router = Router::new()
-        .route("/raft/append", post(append_handler))
-        .route("/raft/vote", post(vote_handler))
-        .route("/raft/snapshot", post(snapshot_handler))
-        .with_state(raft);
+    let router = IronRaftHttpServer::router(raft);
 
     let addr = http_addr.parse::<SocketAddr>()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -91,28 +77,4 @@ fn initial_members() -> BTreeMap<u64, openraft::BasicNode> {
         (2, openraft::BasicNode::new("127.0.0.1:5002")),
         (3, openraft::BasicNode::new("127.0.0.1:5003")),
     ])
-}
-
-// 处理追加日志请求。
-async fn append_handler(
-    State(raft): State<Raft<IronRaftTypeConfig>>,
-    Json(request): Json<AppendEntriesRequest<IronRaftTypeConfig>>,
-) -> Json<Result<AppendEntriesResponse<u64>, RaftError<u64>>> {
-    Json(raft.append_entries(request).await)
-}
-
-// 处理投票请求。
-async fn vote_handler(
-    State(raft): State<Raft<IronRaftTypeConfig>>,
-    Json(request): Json<VoteRequest<u64>>,
-) -> Json<Result<VoteResponse<u64>, RaftError<u64>>> {
-    Json(raft.vote(request).await)
-}
-
-// 处理安装快照请求。
-async fn snapshot_handler(
-    State(raft): State<Raft<IronRaftTypeConfig>>,
-    Json(request): Json<InstallSnapshotRequest<IronRaftTypeConfig>>,
-) -> Json<Result<InstallSnapshotResponse<u64>, RaftError<u64, openraft::error::InstallSnapshotError>>> {
-    Json(raft.install_snapshot(request).await)
 }
