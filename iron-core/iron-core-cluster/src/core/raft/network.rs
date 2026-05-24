@@ -2,8 +2,6 @@
 
 use crate::model::ClusterError;
 use crate::model::ClusterFrameKind;
-use crate::model::IronRaftNetwork;
-use crate::model::IronRaftNetworkFactory;
 use crate::model::IronRaftTypeConfig;
 use openraft::RaftNetwork;
 use openraft::RaftNetworkFactory;
@@ -25,15 +23,22 @@ use openraft::raft::VoteResponse;
 use std::future::Future;
 use tokio::net::TcpStream;
 
+// IronMesh 集群 Raft 网络工厂。
+#[derive(Clone)]
+pub(crate) struct IronRaftNetworkFactory;
+
+// IronMesh 集群 Raft 单节点网络客户端。
+pub(crate) struct IronRaftNetwork {
+    pub(crate) target_node: BasicNode, // 目标 Raft 节点网络信息。
+}
+
 impl RaftNetworkFactory<IronRaftTypeConfig> for IronRaftNetworkFactory {
     type Network = IronRaftNetwork;
 
     // 创建指向目标节点的 Raft 网络客户端。
-    async fn new_client(&mut self, target: u64, node: &BasicNode) -> Self::Network {
+    async fn new_client(&mut self, _target: u64, node: &BasicNode) -> Self::Network {
         IronRaftNetwork {
-            target,
             target_node: node.clone(),
-            cluster_token: self.cluster_token.clone(),
         }
     }
 }
@@ -85,10 +90,10 @@ impl IronRaftNetwork {
         let mut stream = TcpStream::connect(&self.target_node.addr)
             .await
             .map_err(|error| RPCError::Unreachable(Unreachable::new(&error)))?;
-        crate::tcp::write_json_frame(&mut stream, kind, request)
+        crate::core::tcp::write_json_frame(&mut stream, kind, request)
             .await
             .map_err(raft_tcp_error)?;
-        let (_, response) = crate::tcp::read_json_frame::<_, TResp>(&mut stream)
+        let (_, response) = crate::core::tcp::read_json_frame::<_, TResp>(&mut stream)
             .await
             .map_err(raft_tcp_error)?;
 

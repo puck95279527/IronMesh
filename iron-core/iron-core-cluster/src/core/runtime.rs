@@ -1,17 +1,15 @@
 // 集群运行时组合逻辑。
 
+use crate::core::raft::network::IronRaftNetworkFactory;
 use crate::model::BizService;
 use crate::model::BizServiceKind;
 use crate::model::ClusterCommand;
 use crate::model::ClusterError;
 use crate::model::ClusterFrameKind;
-use crate::model::ClusterRegistryConfig;
 use crate::model::ClusterRegistryNodeConfig;
-use crate::model::ClusterRegistryRuntimeNode;
-use crate::model::ClusterWorkerConfig;
 use crate::model::IronClusterService;
-use crate::model::IronRaftNetworkFactory;
 use crate::model::IronRaftStore;
+use crate::model::IronRaftTypeConfig;
 use crate::model::RaftServiceRole;
 use openraft::Config;
 use openraft::impls::BasicNode;
@@ -30,14 +28,25 @@ use tokio::net::TcpStream;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
+// 注册中心运行节点。
+#[derive(Clone)]
+struct ClusterRegistryRuntimeNode {
+    raft_node_id: u64,                        // 当前 Raft 节点 ID。
+    tcp_addr: String,                         // 当前 TCP 监听地址。
+    raft: openraft::Raft<IronRaftTypeConfig>, // 当前节点 Raft 句柄。
+    store: IronRaftStore,                     // 当前节点 Raft 存储。
+}
+
 // 启动注册中心集群。
 pub(crate) async fn start_registry_cluster(
-    config: ClusterRegistryConfig,
+    cluster_id: String,
+    registry_nodes: Vec<ClusterRegistryNodeConfig>,
+    debug_http_addr: String,
 ) -> Result<(), ClusterError> {
-    let tcp_listeners = bind_registry_tcp_listeners(&config.registry_nodes).await?;
-    let http_addr: SocketAddr = config.debug_http_addr.parse()?;
+    let tcp_listeners = bind_registry_tcp_listeners(&registry_nodes).await?;
+    let http_addr: SocketAddr = debug_http_addr.parse()?;
     let http_listener = TcpListener::bind(http_addr).await?;
-    let nodes = build_registry_nodes(&config).await?;
+    let nodes = build_registry_nodes(&cluster_id, &registry_nodes).await?;
 
     for (node, listener) in nodes.clone().into_iter().zip(tcp_listeners) {
         let all_nodes = nodes.clone();
@@ -56,14 +65,14 @@ pub(crate) async fn start_registry_cluster(
     });
 
     let registry_nodes = nodes.clone();
-    let registry_http_addr = config.debug_http_addr.clone();
+    let registry_http_addr = debug_http_addr.clone();
     tokio::spawn(async move {
         register_registry_nodes_until_success(registry_nodes, registry_http_addr).await;
     });
 
     info!(
-        cluster_id = %config.cluster_id,
-        debug_http_addr = %config.debug_http_addr,
+        cluster_id = %cluster_id,
+        debug_http_addr = %debug_http_addr,
         "注册中心集群已启动"
     );
 
@@ -72,10 +81,15 @@ pub(crate) async fn start_registry_cluster(
 }
 
 // 启动工作节点。
-pub(crate) async fn start_worker(config: ClusterWorkerConfig) -> Result<(), ClusterError> {
+pub(crate) async fn start_worker(
+    cluster_id: String,
+    biz_kind: BizServiceKind,
+    biz_service_id: String,
+    registry_nodes: Vec<ClusterRegistryNodeConfig>,
+) -> Result<(), ClusterError> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let local_addr = listener.local_addr()?;
-    let record = worker_service_record(&config, local_addr);
+    let record = worker_service_record(biz_kind, &biz_service_id, local_addr);
 
     tokio::spawn(async move {
         loop {
@@ -90,14 +104,14 @@ pub(crate) async fn start_worker(config: ClusterWorkerConfig) -> Result<(), Clus
     });
 
     info!(
-        cluster_id = %config.cluster_id,
-        biz_service_id = %config.biz_service_id,
+        cluster_id = %cluster_id,
+        biz_service_id = %biz_service_id,
         worker_tcp_addr = %local_addr,
         "工作节点已启动"
     );
 
     loop {
-        for registry_node in &config.registry_nodes {
+        for registry_node in &registry_nodes {
             match maintain_registry_connection(&registry_node.tcp_addr, &record).await {
                 Ok(()) => {}
                 Err(error) => {
@@ -135,21 +149,20 @@ async fn bind_registry_tcp_listeners(
 
 // 创建注册中心 Raft 节点列表。
 async fn build_registry_nodes(
-    config: &ClusterRegistryConfig,
+    cluster_id: &str,
+    registry_nodes: &[ClusterRegistryNodeConfig],
 ) -> Result<Vec<ClusterRegistryRuntimeNode>, ClusterError> {
     let mut nodes = Vec::new();
-    let members = registry_members(&config.registry_nodes);
+    let members = registry_members(registry_nodes);
 
-    for node_config in &config.registry_nodes {
+    for node_config in registry_nodes {
         let store = IronRaftStore::default();
         let raft_config = Config {
-            cluster_name: config.cluster_id.clone(),
+            cluster_name: cluster_id.to_string(),
             ..Default::default()
         }
         .validate()?;
-        let network = IronRaftNetworkFactory {
-            cluster_token: config.cluster_token.clone(),
-        };
+        let network = IronRaftNetworkFactory;
         let raft = openraft::Raft::new(
             node_config.raft_node_id,
             Arc::new(raft_config),
@@ -214,7 +227,7 @@ async fn handle_registry_connection(
     current_node: ClusterRegistryRuntimeNode,
     all_nodes: Vec<ClusterRegistryRuntimeNode>,
 ) -> Result<(), ClusterError> {
-    let (kind, body) = crate::tcp::read_frame(&mut stream).await?;
+    let (kind, body) = crate::core::tcp::read_frame(&mut stream).await?;
 
     match kind {
         ClusterFrameKind::RegisterService => {
@@ -230,7 +243,8 @@ async fn handle_registry_connection(
                 .append_entries(request)
                 .await
                 .map_err(|error| ClusterError::RaftWrite(error.to_string()))?;
-            crate::tcp::write_json_frame(&mut stream, ClusterFrameKind::RaftAppend, &response).await
+            crate::core::tcp::write_json_frame(&mut stream, ClusterFrameKind::RaftAppend, &response)
+                .await
         }
         ClusterFrameKind::RaftVote => {
             let request = serde_json::from_slice::<VoteRequest<u64>>(&body)?;
@@ -239,7 +253,8 @@ async fn handle_registry_connection(
                 .vote(request)
                 .await
                 .map_err(|error| ClusterError::RaftWrite(error.to_string()))?;
-            crate::tcp::write_json_frame(&mut stream, ClusterFrameKind::RaftVote, &response).await
+            crate::core::tcp::write_json_frame(&mut stream, ClusterFrameKind::RaftVote, &response)
+                .await
         }
         _ => Err(ClusterError::Protocol("注册中心收到未知首帧".to_string())),
     }
@@ -255,7 +270,7 @@ async fn handle_worker_connection(
     info!(biz_service_id = %service.biz_service_id, "工作节点注册成功");
 
     loop {
-        match crate::tcp::read_frame(&mut stream).await {
+        match crate::core::tcp::read_frame(&mut stream).await {
             Ok((ClusterFrameKind::Heartbeat, _)) => {}
             Ok((_kind, _body)) => {
                 return Err(ClusterError::Protocol(
@@ -323,7 +338,8 @@ async fn start_registry_debug_http(
     http_addr: SocketAddr,
     nodes: Vec<ClusterRegistryRuntimeNode>,
 ) -> Result<(), ClusterError> {
-    let app = crate::http::build_registry_debug_http_router(nodes);
+    let stores = nodes.into_iter().map(|node| node.store).collect();
+    let app = crate::core::http::build_registry_debug_http_router(stores);
 
     info!(http_addr = %http_addr, "注册中心验证 HTTP 已监听");
     axum::serve(listener, app).await?;
@@ -336,17 +352,20 @@ async fn maintain_registry_connection(
     record: &IronClusterService,
 ) -> Result<(), ClusterError> {
     let mut stream = TcpStream::connect(registry_addr).await?;
-    crate::tcp::write_json_frame(&mut stream, ClusterFrameKind::RegisterService, record).await?;
+    crate::core::tcp::write_json_frame(&mut stream, ClusterFrameKind::RegisterService, record)
+        .await?;
 
     loop {
         sleep(Duration::from_millis(500)).await;
-        crate::tcp::write_json_frame(&mut stream, ClusterFrameKind::Heartbeat, record).await?;
+        crate::core::tcp::write_json_frame(&mut stream, ClusterFrameKind::Heartbeat, record)
+            .await?;
     }
 }
 
 // 创建工作节点服务注册记录。
 fn worker_service_record(
-    config: &ClusterWorkerConfig,
+    biz_kind: BizServiceKind,
+    biz_service_id: &str,
     local_addr: SocketAddr,
 ) -> IronClusterService {
     IronClusterService {
@@ -355,8 +374,8 @@ fn worker_service_record(
         raft_addr: None,
         raft_epoch: None,
         raft_alive_at_ms: None,
-        biz_kind: config.biz_kind,
-        biz_service_id: config.biz_service_id.clone(),
+        biz_kind,
+        biz_service_id: biz_service_id.to_string(),
         biz_services: vec![BizService {
             name: "cluster-tcp".to_string(),
             addr: local_addr.to_string(),
@@ -470,15 +489,8 @@ mod tests {
     // 验证工作节点服务记录不包含 Raft 字段。
     #[test]
     fn worker_service_has_no_raft_fields() {
-        let config = ClusterWorkerConfig {
-            cluster_id: "ironmesh-local".to_string(),
-            cluster_token: "token".to_string(),
-            biz_kind: BizServiceKind::GamePdk,
-            biz_service_id: "game_pdk-1001".to_string(),
-            registry_nodes: Vec::new(),
-        };
         let local_addr: SocketAddr = "127.0.0.1:9000".parse().expect("监听地址无效");
-        let service = worker_service_record(&config, local_addr);
+        let service = worker_service_record(BizServiceKind::GamePdk, "game_pdk-1001", local_addr);
 
         assert_eq!(service.biz_kind, BizServiceKind::GamePdk);
         assert_eq!(service.raft_id, None);

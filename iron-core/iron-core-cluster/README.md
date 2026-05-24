@@ -81,25 +81,6 @@
 |---|---|---|
 | `ClusterDebugHttpConfig` | `http_addr` | 验证查询 HTTP 地址。 |
 
-## ClusterRegistryConfig
-
-| 类型 | 字段 | 作用 |
-|---|---|---|
-| `ClusterRegistryConfig` | `cluster_id` | 集群 ID。 |
-| `ClusterRegistryConfig` | `cluster_token` | 集群内部共享密钥。 |
-| `ClusterRegistryConfig` | `registry_nodes` | 注册中心 Raft 节点列表。 |
-| `ClusterRegistryConfig` | `debug_http_addr` | 验证查询 HTTP 地址。 |
-
-## ClusterWorkerConfig
-
-| 类型 | 字段 | 作用 |
-|---|---|---|
-| `ClusterWorkerConfig` | `cluster_id` | 集群 ID。 |
-| `ClusterWorkerConfig` | `cluster_token` | 集群内部共享密钥。 |
-| `ClusterWorkerConfig` | `biz_kind` | 当前业务服务类型。 |
-| `ClusterWorkerConfig` | `biz_service_id` | 当前业务服务实例 ID。 |
-| `ClusterWorkerConfig` | `registry_nodes` | 注册中心种子节点列表。 |
-
 ## ClusterRegistryRuntimeNode
 
 | 类型 | 字段 | 作用 |
@@ -108,12 +89,6 @@
 | `ClusterRegistryRuntimeNode` | `tcp_addr` | 当前 TCP 监听地址。 |
 | `ClusterRegistryRuntimeNode` | `raft` | 当前节点 Raft 句柄。 |
 | `ClusterRegistryRuntimeNode` | `store` | 当前节点 Raft 存储。 |
-
-## ClusterDebugHttpState
-
-| 类型 | 字段 | 作用 |
-|---|---|---|
-| `ClusterDebugHttpState` | `nodes` | 注册中心运行节点列表。 |
 
 ## ClusterError
 
@@ -176,15 +151,13 @@
 
 | 类型 | 字段 | 作用 |
 |---|---|---|
-| `IronRaftNetworkFactory` | `cluster_token` | 集群内部共享密钥。 |
+| `IronRaftNetworkFactory` | 无字段 | 创建指向目标 Raft 节点的网络客户端。 |
 
 ## IronRaftNetwork
 
 | 类型 | 字段 | 作用 |
 |---|---|---|
-| `IronRaftNetwork` | `target` | 目标 Raft 节点 ID。 |
 | `IronRaftNetwork` | `target_node` | 目标 Raft 节点网络信息。 |
-| `IronRaftNetwork` | `cluster_token` | 集群内部共享密钥。 |
 
 ## API
 
