@@ -11,6 +11,7 @@ use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
 use crate::raft::network::iron_raft_tcp_server::IronRaftTcpServer;
 
 // Raft 能力模块入口。
+pub mod cluster;
 pub mod core;
 pub mod dto;
 pub mod model;
