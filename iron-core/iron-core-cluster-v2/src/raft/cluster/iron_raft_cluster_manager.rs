@@ -272,8 +272,13 @@ impl IronRaftClusterManager {
         }
 
         // 5.2 依次把其余启动节点加入集群。
+        let mut did_progress = false;
         for (target_id, target_node) in self.boot_nodes.iter() {
             if *target_id == self.current_node.node_id {
+                continue;
+            }
+
+            if !Self::is_peer_reachable(&target_node.node_addr).await {
                 continue;
             }
 
@@ -317,9 +322,22 @@ impl IronRaftClusterManager {
                 target_addr = %target_node.node_addr,
                 "节点已逐个加入集群"
             );
+            did_progress = true;
+        }
+
+        if !did_progress {
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
         Ok(())
+    }
+
+    // 探测目标节点的 TCP 地址是否可达。
+    async fn is_peer_reachable(node_addr: &str) -> bool {
+        matches!(
+            tokio::time::timeout(Duration::from_millis(200), tokio::net::TcpStream::connect(node_addr)).await,
+            Ok(Ok(_))
+        )
     }
 }
 
