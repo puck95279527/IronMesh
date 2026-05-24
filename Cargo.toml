@@ -8,6 +8,7 @@ members = [
     "iron-business/iron-service-registry",
     "iron-core/iron-core-business",
     "iron-core/iron-core-cluster",
+    "iron-core/iron-core-cluster-v2",
     "iron-protocol/iron-scheme-libs/iron-scheme-business",
     "iron-protocol/iron-scheme-libs/iron-scheme-cluster",
 ]
@@ -31,5 +32,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # workspace 内部 crate。
 iron-core-cluster = { path = "iron-core/iron-core-cluster" }
+iron-core-cluster-v2 = { path = "iron-core/iron-core-cluster-v2" }
 iron-scheme-business = { path = "iron-protocol/iron-scheme-libs/iron-scheme-business" }
 iron-scheme-cluster = { path = "iron-protocol/iron-scheme-libs/iron-scheme-cluster" }

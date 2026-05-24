@@ -1,0 +1,12 @@
+[package]
+name = "iron-core-cluster-v2"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "iron_core_cluster_v2"
+path = "src/lib.rs"
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
