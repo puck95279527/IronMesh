@@ -62,10 +62,13 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 
 - 根目录 `Cargo.toml` 统一管理 workspace 成员、公共 package 信息和公共依赖。
 - 子 crate 的 `version` 和 `edition` 默认使用 `version.workspace = true`、`edition.workspace = true`。
-- 第三方依赖版本必须优先声明在根目录 `[workspace.dependencies]` 中，子 crate 使用 `依赖名.workspace = true`。
-- workspace 内部 crate 的路径必须优先声明在根目录 `[workspace.dependencies]` 中，子 crate 使用 `crate-name.workspace = true`。
+- 第三方依赖的版本号、默认 feature 组合必须声明在根目录 `[workspace.dependencies]` 中，子 crate 不允许直接写第三方依赖版本号。
+- 子 crate 使用第三方依赖时必须写 `依赖名.workspace = true`，例如 `tokio.workspace = true`。
+- workspace 内部 crate 的路径必须声明在根目录 `[workspace.dependencies]` 中，子 crate 不允许直接写 path，必须使用 `crate-name.workspace = true`。
 - `[workspace.dependencies]` 必须按类别分组，并使用中文注释标明类别，例如第三方依赖、workspace 内部 crate。
-- 只有当某个依赖确实需要在单个 crate 中使用不同版本或不同 feature 时，才允许在子 crate 单独声明，并在旁边写中文注释说明原因。
+- 如果某个依赖确实只在单个 crate 中需要额外 feature，优先把该 feature 合并到根目录 `[workspace.dependencies]` 的统一配置中。
+- 只有当额外 feature 无法放入根 workspace 统一配置时，子 crate 才允许写 `{ workspace = true, features = [...] }`，并必须在旁边写中文注释说明原因；仍然不允许写版本号。
+- 只有当某个依赖确实需要在单个 crate 中使用不同版本时，才允许在子 crate 单独声明版本，并必须在旁边写中文注释说明原因。
 - `iron-zenith-lab` 下的目录只有在成为有效 crate 且拥有自己的 `Cargo.toml` 后，才加入 workspace members。
 - 测试、压测、模拟类 crate 的依赖仍遵守根 workspace 统一依赖声明规则。
 
