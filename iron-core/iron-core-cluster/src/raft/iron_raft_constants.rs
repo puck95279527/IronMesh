@@ -31,6 +31,12 @@ pub(crate) const BOOT_NODE_JOIN_RETRY_INTERVAL: Duration = Duration::from_secs(1
 // 节点加入 RPC 成功后等待本地 Raft 状态就绪的超时时间。
 pub(crate) const JOIN_LOCAL_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
+// learner 断线后移出 membership 的最大尝试次数。
+pub(crate) const LEARNER_REMOVE_RETRY_LIMIT: usize = 3;
+
+// learner 断线后移出 membership 失败时的短暂重试间隔。
+pub(crate) const LEARNER_REMOVE_RETRY_INTERVAL: Duration = Duration::from_millis(200);
+
 // ==================== TCP 帧安全参数 ====================
 
 // TCP frame 最大 body 长度，超过后直接拒绝读取或写入。

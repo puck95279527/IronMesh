@@ -21,6 +21,8 @@ use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterMan
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_INITIALIZE_DELAY;
 use crate::raft::iron_raft_constants::JOIN_LOCAL_READY_TIMEOUT;
+use crate::raft::iron_raft_constants::LEARNER_REMOVE_RETRY_INTERVAL;
+use crate::raft::iron_raft_constants::LEARNER_REMOVE_RETRY_LIMIT;
 use crate::raft::iron_raft_constants::PEER_REACHABLE_TIMEOUT;
 use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MAX;
 use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MIN;
@@ -203,33 +205,6 @@ impl IronRaftClusterManagerSupport {
         raft: Raft<IronRaftTypeConfig>,
         event: IronRaftNetworkEvent,
     ) {
-        let metrics = raft.metrics().borrow().clone();
-        if metrics.state != ServerState::Leader {
-            return;
-        }
-
-        let membership = metrics.membership_config.membership();
-        if membership.get_node(&event.target_node_id).is_none() {
-            tracing::debug!(
-                target_node_id = event.target_node_id,
-                target_addr = %event.target_addr,
-                "[Iron] [cluster] 断线节点已不在当前 membership 中"
-            );
-            return;
-        }
-
-        if membership
-            .voter_ids()
-            .any(|node_id| node_id == event.target_node_id)
-        {
-            tracing::debug!(
-                target_node_id = event.target_node_id,
-                target_addr = %event.target_addr,
-                "[Iron] [cluster] 断线节点是 voter，保留 membership"
-            );
-            return;
-        }
-
         tracing::warn!(
             target_node_id = event.target_node_id,
             target_addr = %event.target_addr,
@@ -237,27 +212,85 @@ impl IronRaftClusterManagerSupport {
             "[Iron] [cluster] learner TCP 复制连接断开，准备移出集群"
         );
 
-        match raft
-            .change_membership(
-                ChangeMembers::RemoveNodes(BTreeSet::from([event.target_node_id])),
-                false,
-            )
-            .await
-        {
-            Ok(_) => {
-                tracing::info!(
+        for attempt in 1..=LEARNER_REMOVE_RETRY_LIMIT {
+            let (is_leader, is_member, is_voter) = {
+                let metrics = raft.metrics().borrow().clone();
+                let membership = metrics.membership_config.membership();
+                (
+                    metrics.state == ServerState::Leader,
+                    membership.get_node(&event.target_node_id).is_some(),
+                    membership
+                        .voter_ids()
+                        .any(|node_id| node_id == event.target_node_id),
+                )
+            };
+
+            if !is_leader {
+                tracing::debug!(
                     target_node_id = event.target_node_id,
                     target_addr = %event.target_addr,
-                    "[Iron] [cluster] learner 已从集群 membership 移除"
+                    attempt,
+                    "[Iron] [cluster] 当前节点不是 leader，停止移除 learner"
                 );
+                return;
             }
-            Err(error) => {
-                tracing::warn!(
+
+            if !is_member {
+                tracing::debug!(
                     target_node_id = event.target_node_id,
                     target_addr = %event.target_addr,
-                    %error,
-                    "[Iron] [cluster] learner 移出集群失败"
+                    attempt,
+                    "[Iron] [cluster] 断线节点已不在当前 membership 中"
                 );
+                return;
+            }
+
+            if is_voter {
+                tracing::debug!(
+                    target_node_id = event.target_node_id,
+                    target_addr = %event.target_addr,
+                    attempt,
+                    "[Iron] [cluster] 断线节点是 voter，保留 membership"
+                );
+                return;
+            }
+
+            match raft
+                .change_membership(
+                    ChangeMembers::RemoveNodes(BTreeSet::from([event.target_node_id])),
+                    false,
+                )
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(
+                        target_node_id = event.target_node_id,
+                        target_addr = %event.target_addr,
+                        attempt,
+                        "[Iron] [cluster] learner 已从集群 membership 移除"
+                    );
+                    return;
+                }
+                Err(error) if attempt < LEARNER_REMOVE_RETRY_LIMIT => {
+                    tracing::warn!(
+                        target_node_id = event.target_node_id,
+                        target_addr = %event.target_addr,
+                        attempt,
+                        %error,
+                        "[Iron] [cluster] learner 移出集群失败，准备短暂重试"
+                    );
+                    tokio::time::sleep(LEARNER_REMOVE_RETRY_INTERVAL).await;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target_node_id = event.target_node_id,
+                        target_addr = %event.target_addr,
+                        attempt,
+                        %error,
+                        "[Iron] [cluster] learner 移出集群最终失败"
+                    );
+                    return;
+                }
             }
         }
     }
