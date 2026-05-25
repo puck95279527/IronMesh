@@ -46,8 +46,3 @@ where
 
     format!("[many={items}]")
 }
-
-// 生成注册节点默认名称。
-pub fn bootstrap_node_name(node_id: u64) -> String {
-    format!("cluster-reg-{node_id}")
-}
