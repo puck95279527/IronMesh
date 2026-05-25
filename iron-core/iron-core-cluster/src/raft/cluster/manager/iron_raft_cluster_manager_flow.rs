@@ -3,6 +3,7 @@ use std::error::Error;
 use std::io::{Error as IoError, ErrorKind};
 
 use openraft::Raft;
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
@@ -13,6 +14,7 @@ use crate::raft::iron_raft_constants::CLUSTER_STARTUP_ERROR_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_STARTUP_RETRY_INTERVAL;
 use crate::raft::iron_raft_log_tag::{many_tag as many_nodes_tag, self_tag as self_node_tag};
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::network::iron_raft_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::storage::iron_raft_log_store::IronRaftLogStore;
@@ -71,7 +73,7 @@ impl IronRaftClusterManagerFlow {
     }
 
     // 阶段 2：创建当前节点的 Raft 实例和 TCP 服务对象。
-    pub async fn build_raft_runtime(
+    pub(crate) async fn build_raft_runtime(
         manager: &IronRaftClusterManager,
     ) -> Result<
         (
@@ -79,6 +81,7 @@ impl IronRaftClusterManagerFlow {
             IronRaftTcpServer,
             String,
             IronRaftStateMachineStore,
+            mpsc::Receiver<IronRaftNetworkEvent>,
         ),
         Box<dyn Error>,
     > {
@@ -87,10 +90,11 @@ impl IronRaftClusterManagerFlow {
         let node_name = manager.current_node.node_name.clone();
         let node_addr = manager.current_node.node_addr.clone();
         let state_machine_store = IronRaftStateMachineStore::default();
+        let (network_event_sender, network_event_receiver) = mpsc::channel(1024);
         let raft = Raft::<IronRaftTypeConfig>::new(
             node_id,
             config,
-            IronRaftNetworkFactory::default(),
+            IronRaftNetworkFactory::new(network_event_sender),
             IronRaftLogStore::default(),
             state_machine_store.clone(),
         )
@@ -105,19 +109,26 @@ impl IronRaftClusterManagerFlow {
             IronRaftTcpServer::new(raft, boot_node_ids),
             node_addr,
             state_machine_store,
+            network_event_receiver,
         ))
     }
 
     // 阶段 3：启动当前节点的后台运行服务。
-    pub fn spawn_runtime_services(
+    pub(crate) fn spawn_runtime_services(
         manager: &IronRaftClusterManager,
         raft: Raft<IronRaftTypeConfig>,
         tcp_server: IronRaftTcpServer,
         node_addr: String,
+        network_event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
     ) -> JoinSet<()> {
         let mut tasks = JoinSet::new();
         IronRaftClusterManagerSupport::spawn_raft_tcp_server(&mut tasks, tcp_server, node_addr);
-        IronRaftClusterManagerSupport::spawn_debug_http(&mut tasks, manager, raft);
+        IronRaftClusterManagerSupport::spawn_debug_http(&mut tasks, manager, raft.clone());
+        IronRaftClusterManagerSupport::spawn_learner_disconnect_remover(
+            &mut tasks,
+            raft,
+            network_event_receiver,
+        );
         tasks
     }
 

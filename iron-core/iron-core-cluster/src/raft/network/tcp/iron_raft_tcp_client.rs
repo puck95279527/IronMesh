@@ -21,6 +21,7 @@ use openraft::raft::SnapshotResponse;
 use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 
 use crate::raft::iron_raft_constants::JOIN_NODE_TIMEOUT;
 use crate::raft::model::command::iron_raft_request::IronRaftRequest;
@@ -29,6 +30,7 @@ use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_request::IronRaftFullSnapshotRequest;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
+use crate::raft::network::iron_raft_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::tcp::iron_raft_tcp_frame::IronRaftTcpFrame;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
@@ -41,6 +43,7 @@ pub struct IronRaftTcpClient {
     pub target_node_id: u64, // 目标节点标识。
     pub target_addr: String, // 目标节点 TCP 地址。
     pub cached_stream: Arc<Mutex<Option<tokio::net::TcpStream>>>, // 目标节点长连接缓存。
+    pub(crate) event_sender: Option<mpsc::Sender<IronRaftNetworkEvent>>, // 可选的 TCP 连接事件发送器。
 }
 
 // OpenRaft 标准协议相关方法。
@@ -109,6 +112,27 @@ impl IronRaftTcpClient {
         *guard = None;
     }
 
+    // 上报目标节点 TCP 连接失败事件。
+    async fn report_connection_failure(&self, error: &std::io::Error) {
+        let Some(event_sender) = &self.event_sender else {
+            return;
+        };
+
+        let event = IronRaftNetworkEvent {
+            target_node_id: self.target_node_id,
+            target_addr: self.target_addr.clone(),
+            error_message: error.to_string(),
+        };
+
+        if event_sender.send(event).await.is_err() {
+            tracing::warn!(
+                target_node_id = self.target_node_id,
+                target_addr = %self.target_addr,
+                "[Iron] [cluster] Raft TCP 断线事件接收任务已关闭"
+            );
+        }
+    }
+
     // 执行一次请求发送与响应读取。
     async fn send_request_once(
         &self,
@@ -141,7 +165,13 @@ impl IronRaftTcpClient {
     ) -> Result<IronRaftTcpRpcResponse, std::io::Error> {
         match self.send_request_once(&request).await {
             Ok(response) => Ok(response),
-            Err(_) => self.send_request_once(&request).await,
+            Err(_) => match self.send_request_once(&request).await {
+                Ok(response) => Ok(response),
+                Err(error) => {
+                    self.report_connection_failure(&error).await;
+                    Err(error)
+                }
+            },
         }
     }
 
@@ -155,10 +185,12 @@ impl IronRaftTcpClient {
             Ok(result) => result,
             Err(_) => {
                 self.clear_cached_stream().await;
-                Err(std::io::Error::new(
+                let error = std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
                     "raft tcp rpc soft ttl timeout",
-                ))
+                );
+                self.report_connection_failure(&error).await;
+                Err(error)
             }
         }
     }

@@ -14,7 +14,7 @@
 | 服务壳显式阻塞 | 外层启动壳通过 `wait_forever()` 决定是否常驻运行，验证启动器放在 `iron-zenith-lab/iron-zenith-cluster-lab`。 |
 | 固定 Boot 起盘 | 配置中唯一 `is_boot_node = true` 的注册节点负责首次起盘。 |
 | 不自动移除 voter | `cluster-reg-*` 投票节点只探测和记录日志，不自动从 membership 移除。 |
-| learner 自动移除 | learner 节点 TCP 不可达后，由 leader 确认并移出集群。 |
+| learner 自动移除 | learner 节点的 Raft TCP 复制连接断开后，由 leader 直接移出集群。 |
 | HTTP 仅做查询 | `/raft/metrics` 继续返回 OpenRaft 原始 metrics，不做展示层过滤。 |
 
 ## 当前状态
@@ -26,8 +26,8 @@
 | 启动流程 | 已整理 | `IronRaftClusterManagerFlow` 保持 5 个启动阶段，常驻等待交给服务壳。 |
 | 库启动 API | 已完成 | `IronRaftClusterManager::start()` 返回 `IronRaftClusterHandle`。 |
 | 后台任务 | 已收口 | TCP、HTTP、维护任务统一注册进 `JoinSet`，由运行句柄托管。 |
-| learner/voter 探测 | 已优化 | 维护任务并发确认节点可达性，learner 移除仍串行执行。 |
-| voter 日志 | 已节流 | voter 长期不可达时按 `VOTER_UNREACHABLE_LOG_INTERVAL` 控制日志频率。 |
+| learner 断线移除 | 已恢复 | 基于现有 Raft TCP 复制连接失败事件移除 learner，不做定时嗅探。 |
+| voter 断线处理 | 保持 | voter 长期不可达时只记录断线日志，不自动从 membership 移除。 |
 | TCP 边界 | 已完成 | frame 长度限制、读写超时、最大连接数限制已经集中处理。 |
 | 常量维护 | 已完成 | Raft、启动流程、TCP、join、维护任务常量集中在 `iron_raft_constants.rs`。 |
 | metrics 查询 | 保持 | `/raft/metrics` 直接暴露 OpenRaft 真实 metrics，便于观察真实集群关系。 |
@@ -49,5 +49,5 @@
 | 最小优先 | 只围绕已有集群能力做稳定性和可维护性优化。 |
 | TCP 优先 | 集群内部通信优先使用 TCP，HTTP 只作为人工验证查询入口。 |
 | voter 保守 | voter 不做自动移除，避免破坏多数派。 |
-| learner 可清理 | learner 不参与投票，可以在确认不可达后由 leader 自动移除。 |
+| learner 可清理 | learner 不参与投票，可以在 Raft TCP 复制连接断开后由 leader 自动移除。 |
 | 参数集中 | 新增运行参数优先放入 `iron_raft_constants.rs`，便于统一调参。 |

@@ -178,6 +178,7 @@ impl IronClusterHandle {
                     target_node_id: leader_id,
                     target_addr: leader_addr.to_string(),
                     cached_stream: Arc::new(tokio::sync::Mutex::new(None)),
+                    event_sender: None,
                 };
                 *guard = Some(client.clone());
                 (client, connection_state)

@@ -11,6 +11,7 @@ use openraft::ChangeMembers;
 use openraft::Config;
 use openraft::Raft;
 use openraft::ServerState;
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use toml::Value;
 
@@ -26,6 +27,7 @@ use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MIN;
 use crate::raft::iron_raft_constants::RAFT_HEARTBEAT_INTERVAL;
 use crate::raft::iron_raft_log_tag::{peer_tag as peer_node_tag, self_tag as self_node_tag};
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::network::iron_raft_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::query::iron_raft_query::start_query_http_with_addr;
@@ -183,6 +185,83 @@ impl IronRaftClusterManagerSupport {
         }
     }
 
+    // 启动 learner TCP 断线自动移除任务。
+    pub(crate) fn spawn_learner_disconnect_remover(
+        tasks: &mut JoinSet<()>,
+        raft: Raft<IronRaftTypeConfig>,
+        mut event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
+    ) {
+        tasks.spawn(async move {
+            while let Some(event) = event_receiver.recv().await {
+                Self::handle_raft_network_event(raft.clone(), event).await;
+            }
+        });
+    }
+
+    // 处理 Raft TCP 连接事件。
+    async fn handle_raft_network_event(
+        raft: Raft<IronRaftTypeConfig>,
+        event: IronRaftNetworkEvent,
+    ) {
+        let metrics = raft.metrics().borrow().clone();
+        if metrics.state != ServerState::Leader {
+            return;
+        }
+
+        let membership = metrics.membership_config.membership();
+        if membership.get_node(&event.target_node_id).is_none() {
+            tracing::debug!(
+                target_node_id = event.target_node_id,
+                target_addr = %event.target_addr,
+                "[Iron] [cluster] 断线节点已不在当前 membership 中"
+            );
+            return;
+        }
+
+        if membership
+            .voter_ids()
+            .any(|node_id| node_id == event.target_node_id)
+        {
+            tracing::debug!(
+                target_node_id = event.target_node_id,
+                target_addr = %event.target_addr,
+                "[Iron] [cluster] 断线节点是 voter，保留 membership"
+            );
+            return;
+        }
+
+        tracing::warn!(
+            target_node_id = event.target_node_id,
+            target_addr = %event.target_addr,
+            error = %event.error_message,
+            "[Iron] [cluster] learner TCP 复制连接断开，准备移出集群"
+        );
+
+        match raft
+            .change_membership(
+                ChangeMembers::RemoveNodes(BTreeSet::from([event.target_node_id])),
+                false,
+            )
+            .await
+        {
+            Ok(_) => {
+                tracing::info!(
+                    target_node_id = event.target_node_id,
+                    target_addr = %event.target_addr,
+                    "[Iron] [cluster] learner 已从集群 membership 移除"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target_node_id = event.target_node_id,
+                    target_addr = %event.target_addr,
+                    %error,
+                    "[Iron] [cluster] learner 移出集群失败"
+                );
+            }
+        }
+    }
+
     // 遍历其他注册节点，尝试加入已有集群。
     pub async fn try_join_existing_cluster(
         manager: &IronRaftClusterManager,
@@ -209,6 +288,7 @@ impl IronRaftClusterManagerSupport {
                 target_node_id: *peer_id,
                 target_addr: peer.node_addr.clone(),
                 cached_stream: Arc::new(tokio::sync::Mutex::new(None)),
+                event_sender: None,
             };
 
             match client
