@@ -10,14 +10,18 @@ use crate::raft::cluster::manager::iron_raft_cluster_manager_support::IronRaftCl
 pub struct IronRaftClusterManager {
     // 当前 Raft 节点。
     pub current_node: IronRaftNode,
-    // Raft 启动节点表。
+    // 注册节点表，表内节点会作为 Raft voter 加入集群。
     pub boot_nodes: BTreeMap<u64, IronRaftNode>,
 }
 
 impl IronRaftClusterManager {
-    // 创建 Raft 集群管理器，并从配置文件加载启动节点。
-    pub fn new(current_node: IronRaftNode) -> Result<Self, Box<dyn Error>> {
+    // 创建 Raft 集群管理器，并从配置文件加载注册节点表。
+    pub fn new(mut current_node: IronRaftNode) -> Result<Self, Box<dyn Error>> {
         let boot_nodes = IronRaftClusterManagerSupport::load_cluster_boot()?;
+        if let Some(config_node) = boot_nodes.get(&current_node.node_id) {
+            current_node.is_boot_node = config_node.is_boot_node;
+        }
+
         Ok(Self {
             current_node,
             boot_nodes,
@@ -26,10 +30,10 @@ impl IronRaftClusterManager {
 
     // 启动当前节点并运行起来。
     pub async fn run(self) -> Result<(), Box<dyn Error>> {
-        // 阶段 1：先校验当前节点和启动节点表，确保角色和拓扑关系一致。
+        // 阶段 1：校验当前节点、注册节点表和唯一首次起盘节点。
         IronRaftClusterManagerFlow::validate_topology(&self)?;
 
-        // 阶段 2：构建 Raft 实例、TCP 服务和本节点运行所需的基础对象。
+        // 阶段 2：创建 Raft 实例、TCP 服务和本节点运行所需的基础对象。
         let (raft, tcp_server, node_addr) =
             IronRaftClusterManagerFlow::build_raft_runtime(&self).await?;
 
@@ -41,12 +45,12 @@ impl IronRaftClusterManager {
             node_addr,
         );
 
-        // 阶段 4：先尝试加入已有集群；如果没有可加入集群，再由 boot 节点争抢起盘。
+        // 阶段 4：先尝试加入已有集群；只有唯一起盘节点允许初始化新集群。
         let bootstrap_owner =
             IronRaftClusterManagerFlow::bootstrap_or_join_cluster(&self, &raft).await?;
 
         if bootstrap_owner {
-            // 阶段 5：只有起盘节点负责把剩余 boot 节点逐个加入集群。
+            // 阶段 5：只有首次起盘节点负责把剩余注册节点逐个加入为 voter。
             IronRaftClusterManagerFlow::join_remaining_boot_nodes(&self, &raft).await?;
         }
 

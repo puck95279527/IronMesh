@@ -2,9 +2,9 @@
 #[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IronRaftNodeRole {
-    // 启动节点，用于集群初始化。
+    // 注册节点，用于参与 Raft 投票。
     Boot,
-    // 普通节点，用于集群运行。
+    // 普通节点，用于作为 learner 加入集群。
     Normal,
 }
 
@@ -19,7 +19,7 @@ pub struct IronRaftNode {
     pub node_addr: String,
     // Raft 节点调试 HTTP 地址。
     pub http_debug_addr: Option<String>,
-    // Raft 节点是否为起盘节点。
+    // Raft 节点是否为唯一首次起盘节点。
     pub is_boot_node: bool,
     // Raft 节点角色。
     pub node_role: IronRaftNodeRole,
@@ -44,8 +44,8 @@ impl IronRaftNode {
         }
     }
 
-    // 判断当前节点是否为启动节点。
+    // 判断当前节点是否为唯一首次起盘节点。
     pub fn is_boot_node(&self) -> bool {
-        matches!(self.node_role, IronRaftNodeRole::Boot)
+        self.is_boot_node
     }
 }

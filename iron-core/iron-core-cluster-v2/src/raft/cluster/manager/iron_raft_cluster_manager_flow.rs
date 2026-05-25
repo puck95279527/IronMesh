@@ -6,6 +6,7 @@ use std::time::Duration;
 use openraft::Raft;
 
 use crate::logging::{many_tag as many_nodes_tag, self_tag as self_node_tag};
+use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
 use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
 use crate::raft::cluster::manager::iron_raft_cluster_manager_support::IronRaftClusterManagerSupport;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
@@ -18,16 +19,21 @@ use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineSto
 pub struct IronRaftClusterManagerFlow;
 
 impl IronRaftClusterManagerFlow {
-    // 阶段 1：校验当前节点和启动节点表。
+    // 阶段 1：校验当前节点、注册节点表和唯一首次起盘节点。
     pub fn validate_topology(manager: &IronRaftClusterManager) -> Result<(), Box<dyn Error>> {
         if manager.boot_nodes.is_empty() {
-            return Err(IoError::new(ErrorKind::InvalidInput, "boot_nodes 不能为空").into());
+            return Err(IoError::new(ErrorKind::InvalidInput, "注册节点表不能为空").into());
         }
 
-        if manager.boot_nodes.values().any(|node| !node.is_boot_node()) {
+        let boot_node_count = manager
+            .boot_nodes
+            .values()
+            .filter(|node| node.is_boot_node())
+            .count();
+        if boot_node_count != 1 {
             return Err(IoError::new(
                 ErrorKind::InvalidInput,
-                "boot_nodes 中的节点必须都是 Boot 角色",
+                "注册节点表中必须且只能配置一个 is_boot_node = true",
             )
             .into());
         }
@@ -35,12 +41,22 @@ impl IronRaftClusterManagerFlow {
         let contains_current = manager
             .boot_nodes
             .contains_key(&manager.current_node.node_id);
-        if contains_current != manager.current_node.is_boot_node() {
-            return Err(IoError::new(
-                ErrorKind::InvalidInput,
-                "当前节点的角色必须和 boot_nodes 的成员关系一致",
-            )
-            .into());
+        match manager.current_node.node_role {
+            IronRaftNodeRole::Boot if !contains_current => {
+                return Err(IoError::new(
+                    ErrorKind::InvalidInput,
+                    "注册节点必须存在于 cluster-boot.toml",
+                )
+                .into());
+            }
+            IronRaftNodeRole::Normal if contains_current => {
+                return Err(IoError::new(
+                    ErrorKind::InvalidInput,
+                    "普通节点不能配置在注册节点表中",
+                )
+                .into());
+            }
+            _ => {}
         }
 
         let self_tag = self_node_tag(
@@ -51,7 +67,7 @@ impl IronRaftClusterManagerFlow {
         Ok(())
     }
 
-    // 阶段 2：创建当前节点的 Raft 实例和 TCP 服务。
+    // 阶段 2：创建当前节点的 Raft 实例和 TCP 服务对象。
     pub async fn build_raft_runtime(
         manager: &IronRaftClusterManager,
     ) -> Result<(Raft<IronRaftTypeConfig>, IronRaftTcpServer, String), Box<dyn Error>> {
@@ -91,7 +107,7 @@ impl IronRaftClusterManagerFlow {
         IronRaftClusterManagerSupport::spawn_debug_http(manager, raft);
     }
 
-    // 阶段 4：尝试加入已有集群，或者争抢起盘资格并初始化最小集群。
+    // 阶段 4：先尝试加入已有集群；只有唯一起盘节点允许初始化新集群。
     pub async fn bootstrap_or_join_cluster(
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
@@ -109,7 +125,7 @@ impl IronRaftClusterManagerFlow {
         }));
         let is_boot_node = manager.current_node.is_boot_node();
 
-        tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 开始尝试 boot 节点流程");
+        tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 开始执行集群启动流程");
 
         loop {
             let (joined_existing_cluster, saw_peer) =
@@ -118,61 +134,32 @@ impl IronRaftClusterManagerFlow {
                 return Ok(false);
             }
 
-            if saw_peer {
-                tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 已发现可加入的集群节点，稍后重试");
-                tokio::time::sleep(Duration::from_millis(800)).await;
-                continue;
-            }
-
             if !is_boot_node {
-                tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 当前节点不是起盘节点，继续等待集群可加入");
-                tokio::time::sleep(Duration::from_millis(800)).await;
-                continue;
-            }
-
-            tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 未发现已有集群，当前启动节点准备争抢起盘锁");
-            let bootstrap_lock = match IronRaftClusterManagerSupport::try_acquire_bootstrap_lock()
-                .await
-            {
-                Some(lock) => lock,
-                None => {
-                    tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 起盘资格已被其他节点占用，稍后重试");
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    continue;
+                if saw_peer {
+                    tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 起盘节点尚未完成集群初始化，稍后重试");
+                } else {
+                    tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 当前节点不是起盘节点，等待起盘节点完成集群初始化");
                 }
-            };
-
-            tracing::info!(%self_tag, "[Iron] [cluster] 当前启动节点已获得起盘锁");
-            let (joined_existing_cluster, saw_peer_after_lock) =
-                IronRaftClusterManagerSupport::try_join_existing_cluster(manager).await?;
-            if joined_existing_cluster {
-                drop(bootstrap_lock);
-                return Ok(false);
-            }
-
-            if saw_peer_after_lock {
-                drop(bootstrap_lock);
                 tokio::time::sleep(Duration::from_millis(800)).await;
                 continue;
             }
 
+            tracing::info!(%self_tag, "[Iron] [cluster] 当前节点是起盘节点，准备初始化集群");
             if let Err(error) =
                 IronRaftClusterManagerSupport::initialize_minimal_cluster(manager, raft).await
             {
-                drop(bootstrap_lock);
                 tracing::warn!(%self_tag, %error, "[Iron] [cluster] 初始化 Raft 集群失败");
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
             }
 
             tracing::info!(%self_tag, "[Iron] [cluster] 最小 Raft 集群初始化完成");
-            drop(bootstrap_lock);
-            tracing::info!(%self_tag, "[Iron] [cluster] 当前节点已完成起盘");
+            tracing::info!(%self_tag, "[Iron] [cluster] 当前节点已完成集群起盘");
             return Ok(true);
         }
     }
 
-    // 阶段 5：如果当前节点是起盘节点，就把其他 boot 节点逐个加进集群。
+    // 阶段 5：如果当前节点完成起盘，就把其他注册节点逐个加入为 voter。
     pub async fn join_remaining_boot_nodes(
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
@@ -194,7 +181,7 @@ impl IronRaftClusterManagerFlow {
             %self_tag,
             %many_tag,
             join_source = "leader_boot_scan",
-            "[Iron] [cluster] leader 开始检查 boot 节点加入状态"
+            "[Iron] [cluster] leader 开始检查注册节点加入状态"
         );
         let mut did_progress = false;
         for (target_id, target_node) in manager.boot_nodes.iter() {
@@ -219,7 +206,7 @@ impl IronRaftClusterManagerFlow {
                 %self_tag,
                 %many_tag,
                 join_source = "leader_boot_scan",
-                "[Iron] [cluster] 本轮没有可加入的 boot 节点"
+                "[Iron] [cluster] 本轮没有可加入的注册节点"
             );
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -227,7 +214,7 @@ impl IronRaftClusterManagerFlow {
         tracing::info!(
             %self_tag,
             join_source = "leader_boot_scan",
-            "[Iron] [cluster] 本轮 boot 节点加入检查完成"
+            "[Iron] [cluster] 本轮注册节点加入检查完成"
         );
         Ok(())
     }

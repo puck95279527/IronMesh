@@ -22,9 +22,6 @@ use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::query::iron_raft_query::start_query_http_with_addr;
 
-// Bootstrap 争抢端口，用于保证同一时刻只会有一个节点负责起盘。
-const BOOTSTRAP_LOCK_ADDR: &str = "127.0.0.1:4999";
-
 // 节点 TCP 可达性探测超时时间。
 const PEER_REACHABLE_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -41,7 +38,7 @@ const LEARNER_CLEANUP_PROBE_COUNT: usize = 3;
 pub struct IronRaftClusterManagerSupport;
 
 impl IronRaftClusterManagerSupport {
-    // 从 `cluster-boot.toml` 读取启动节点表。
+    // 从 `cluster-boot.toml` 读取注册节点表。
     pub fn load_cluster_boot() -> Result<BTreeMap<u64, IronRaftNode>, Box<dyn Error>> {
         let config_path = env::current_exe()?
             .parent()
@@ -55,7 +52,7 @@ impl IronRaftClusterManagerSupport {
             .ok_or_else(|| {
                 IoError::new(
                     ErrorKind::InvalidData,
-                    format!("{} 缺少 boot_nodes 数组", config_path.display()),
+                    format!("{} 缺少 IronRaftNode 数组", config_path.display()),
                 )
             })?;
 
@@ -64,7 +61,7 @@ impl IronRaftClusterManagerSupport {
             let table = item.as_table().ok_or_else(|| {
                 IoError::new(
                     ErrorKind::InvalidData,
-                    format!("{} 中的 boot_nodes 条目必须是表", config_path.display()),
+                    format!("{} 中的 IronRaftNode 条目必须是表", config_path.display()),
                 )
             })?;
 
@@ -74,12 +71,15 @@ impl IronRaftClusterManagerSupport {
                 .ok_or_else(|| {
                     IoError::new(
                         ErrorKind::InvalidData,
-                        format!("{} 中的 boot_nodes 条目缺少 node_id", config_path.display()),
+                        format!(
+                            "{} 中的 IronRaftNode 条目缺少 node_id",
+                            config_path.display()
+                        ),
                     )
                 })?;
             if node_id < 0 {
                 return Err(
-                    IoError::new(ErrorKind::InvalidData, "boot 节点 node_id 不能为负数").into(),
+                    IoError::new(ErrorKind::InvalidData, "注册节点 node_id 不能为负数").into(),
                 );
             }
 
@@ -90,7 +90,7 @@ impl IronRaftClusterManagerSupport {
                     IoError::new(
                         ErrorKind::InvalidData,
                         format!(
-                            "{} 中的 boot_nodes 条目缺少 node_name",
+                            "{} 中的 IronRaftNode 条目缺少 node_name",
                             config_path.display()
                         ),
                     )
@@ -102,7 +102,7 @@ impl IronRaftClusterManagerSupport {
                     IoError::new(
                         ErrorKind::InvalidData,
                         format!(
-                            "{} 中的 boot_nodes 条目缺少 node_addr",
+                            "{} 中的 IronRaftNode 条目缺少 node_addr",
                             config_path.display()
                         ),
                     )
@@ -220,7 +220,7 @@ impl IronRaftClusterManagerSupport {
         }
     }
 
-    // 遍历其他 boot 节点，尝试加入已有集群。
+    // 遍历其他注册节点，尝试加入已有集群。
     pub async fn try_join_existing_cluster(
         manager: &IronRaftClusterManager,
     ) -> Result<(bool, bool), Box<dyn Error>> {
@@ -237,7 +237,7 @@ impl IronRaftClusterManagerSupport {
 
             let peer_tag = peer_node_tag(*peer_id, peer.node_name.as_str());
             if !Self::is_peer_reachable(&peer.node_addr).await {
-                tracing::debug!(%self_tag, %peer_tag, "[Iron] [cluster] 已有节点 TCP 暂不可达，跳过本次加入探测");
+                tracing::debug!(%self_tag, %peer_tag, "[Iron] [cluster] 注册节点 TCP 暂不可达，跳过本次加入探测");
                 continue;
             }
 
@@ -265,19 +265,12 @@ impl IronRaftClusterManagerSupport {
                     }
 
                     saw_peer = true;
-                    tracing::debug!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 已有节点暂时不可加入，稍后重试");
+                    tracing::debug!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 起盘节点尚未完成集群初始化，稍后重试");
                 }
             }
         }
 
         Ok((false, saw_peer))
-    }
-
-    // 尝试获取本地起盘锁。
-    pub async fn try_acquire_bootstrap_lock() -> Option<tokio::net::TcpListener> {
-        tokio::net::TcpListener::bind(BOOTSTRAP_LOCK_ADDR)
-            .await
-            .ok()
     }
 
     // 初始化只包含当前节点的最小 Raft 集群。
@@ -300,7 +293,7 @@ impl IronRaftClusterManagerSupport {
         Ok(())
     }
 
-    // 等待当前节点成为 Leader。
+    // 等待当前节点成为领导节点(leader)。
     pub async fn wait_until_leader(
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
@@ -312,7 +305,7 @@ impl IronRaftClusterManagerSupport {
         tracing::info!(%self_tag, "[Iron] [cluster] 正在等待当前节点成为领导节点(leader)");
         if let Err(error) = raft
             .wait(None)
-            .state(ServerState::Leader, "等待 bootstrap 节点成为 Leader")
+            .state(ServerState::Leader, "等待起盘节点成为 leader")
             .await
         {
             return Err(IoError::new(ErrorKind::Other, error.to_string()).into());
@@ -478,7 +471,7 @@ impl IronRaftClusterManagerSupport {
         }
     }
 
-    // 将单个 boot 节点加入集群。
+    // 将单个注册节点加入集群。
     pub async fn join_one_boot_node(
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
@@ -496,7 +489,7 @@ impl IronRaftClusterManagerSupport {
                 %self_tag,
                 %peer_tag,
                 join_source = "leader_boot_scan",
-                "[Iron] [cluster] boot 节点暂不可达，本轮跳过"
+                "[Iron] [cluster] 注册节点暂不可达，本轮跳过"
             );
             return Ok(false);
         }
@@ -536,7 +529,7 @@ impl IronRaftClusterManagerSupport {
             %self_tag,
             %peer_tag,
             join_source = "leader_boot_scan",
-            "[Iron] [cluster] leader 已将节点加入集群"
+            "[Iron] [cluster] leader 已将注册节点加入集群"
         );
         Ok(true)
     }
