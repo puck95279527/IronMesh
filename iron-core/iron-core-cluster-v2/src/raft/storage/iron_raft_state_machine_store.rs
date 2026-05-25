@@ -11,10 +11,11 @@ use openraft::entry::RaftPayload;
 use openraft::storage::RaftStateMachine;
 use tokio::sync::Mutex;
 
-use crate::raft::dto::iron_raft_state_machine_data::IronRaftStateMachineData;
-use crate::raft::model::iron_raft_request::IronRaftRequest;
-use crate::raft::model::iron_raft_stored_snapshot::IronRaftStoredSnapshot;
+use crate::raft::model::command::iron_raft_request::IronRaftRequest;
+use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::model::snapshot::iron_raft_stored_snapshot::IronRaftStoredSnapshot;
+use crate::raft::model::state_machine::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh Raft 最小状态机存储模型。
 #[derive(Debug, Clone)]
@@ -59,10 +60,7 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
     }
 
     // 应用已经提交的日志到状态机。
-    async fn apply<I>(
-        &mut self,
-        entries: I,
-    ) -> Result<Vec<crate::raft::model::iron_raft_response::IronRaftResponse>, StorageError<u64>>
+    async fn apply<I>(&mut self, entries: I) -> Result<Vec<IronRaftResponse>, StorageError<u64>>
     where
         I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig>> + openraft::OptionalSend,
         I::IntoIter: openraft::OptionalSend,
@@ -78,20 +76,16 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
             }
 
             let response = match entry.payload {
-                EntryPayload::Blank => {
-                    crate::raft::model::iron_raft_response::IronRaftResponse::default()
-                }
+                EntryPayload::Blank => IronRaftResponse::default(),
                 EntryPayload::Normal(IronRaftRequest::Set { key, value }) => {
                     self.state_machine
                         .lock()
                         .await
                         .data
                         .insert(key, value.clone());
-                    crate::raft::model::iron_raft_response::IronRaftResponse { value: Some(value) }
+                    IronRaftResponse { value: Some(value) }
                 }
-                EntryPayload::Membership(_) => {
-                    crate::raft::model::iron_raft_response::IronRaftResponse::default()
-                }
+                EntryPayload::Membership(_) => IronRaftResponse::default(),
             };
 
             responses.push(response);

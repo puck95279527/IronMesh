@@ -1,8 +1,8 @@
 use openraft::raft::AppendEntriesRequest;
 use openraft::raft::VoteRequest;
 
-use crate::raft::model::iron_raft_full_snapshot_request::IronRaftFullSnapshotRequest;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::model::snapshot::iron_raft_full_snapshot_request::IronRaftFullSnapshotRequest;
 
 // IronMesh Raft TCP 请求传输模型。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

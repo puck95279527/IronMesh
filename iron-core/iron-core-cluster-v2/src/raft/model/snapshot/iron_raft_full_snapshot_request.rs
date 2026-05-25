@@ -1,4 +1,4 @@
-use crate::raft::model::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
+use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 
 // IronMesh 完整快照请求传输模型。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

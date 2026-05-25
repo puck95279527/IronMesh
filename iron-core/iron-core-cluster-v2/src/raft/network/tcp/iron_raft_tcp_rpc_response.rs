@@ -3,7 +3,7 @@ use openraft::error::RaftError;
 use openraft::raft::AppendEntriesResponse;
 use openraft::raft::VoteResponse;
 
-use crate::raft::model::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
+use crate::raft::model::snapshot::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
 
 // IronMesh Raft TCP 响应传输模型。
 #[derive(Debug, serde::Deserialize, serde::Serialize)]

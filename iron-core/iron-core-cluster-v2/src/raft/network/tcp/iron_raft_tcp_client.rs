@@ -23,13 +23,13 @@ use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
 use tokio::sync::Mutex;
 
-use crate::raft::model::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
-use crate::raft::model::iron_raft_full_snapshot_request::IronRaftFullSnapshotRequest;
-use crate::raft::model::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
-use crate::raft::network::iron_raft_tcp_frame::IronRaftTcpFrame;
-use crate::raft::network::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
-use crate::raft::network::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
+use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
+use crate::raft::model::snapshot::iron_raft_full_snapshot_request::IronRaftFullSnapshotRequest;
+use crate::raft::model::snapshot::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
+use crate::raft::network::tcp::iron_raft_tcp_frame::IronRaftTcpFrame;
+use crate::raft::network::tcp::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
+use crate::raft::network::tcp::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
 
 // IronMesh Raft TCP 客户端。
 #[derive(Debug, Clone)]

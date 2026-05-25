@@ -2,7 +2,7 @@ use openraft::RaftNetworkFactory;
 use tokio::sync::Mutex;
 
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
-use crate::raft::network::iron_raft_tcp_client::IronRaftTcpClient;
+use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 
 // IronMesh Raft 网络工厂。
 #[derive(Debug, Clone, Default)]

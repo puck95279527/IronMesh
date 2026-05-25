@@ -13,14 +13,14 @@ use openraft::Raft;
 use openraft::ServerState;
 use toml::Value;
 
-use crate::http::iron_raft_query::start_query_http_with_addr;
 use crate::logging::{peer_tag as peer_node_tag, self_tag as self_node_tag};
-use crate::raft::cluster::iron_raft_cluster_manager::IronRaftClusterManager;
 use crate::raft::cluster::iron_raft_node::IronRaftNode;
 use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
+use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
-use crate::raft::network::iron_raft_tcp_client::IronRaftTcpClient;
-use crate::raft::network::iron_raft_tcp_server::IronRaftTcpServer;
+use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
+use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
+use crate::raft::query::iron_raft_query::start_query_http_with_addr;
 
 // Bootstrap 争抢端口，用于保证同一时刻只会有一个节点负责起盘。
 const BOOTSTRAP_LOCK_ADDR: &str = "127.0.0.1:4999";

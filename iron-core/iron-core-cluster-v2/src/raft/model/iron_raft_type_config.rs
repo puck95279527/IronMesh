@@ -2,8 +2,8 @@ use std::io::Cursor;
 
 use openraft::BasicNode;
 
-use crate::raft::model::iron_raft_request::IronRaftRequest;
-use crate::raft::model::iron_raft_response::IronRaftResponse;
+use crate::raft::model::command::iron_raft_request::IronRaftRequest;
+use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 
 openraft::declare_raft_types!(
     // IronMesh 集群 Raft 类型配置。
