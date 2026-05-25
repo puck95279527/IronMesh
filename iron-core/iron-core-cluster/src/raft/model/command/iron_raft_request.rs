@@ -1,4 +1,4 @@
-use crate::raft::model::state_machine::iron_cluster_data_command::IronClusterDataCommand;
+use crate::cluster_data::iron_cluster_data_command::IronClusterDataCommand;
 
 // IronMesh Raft 最小请求模型。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
