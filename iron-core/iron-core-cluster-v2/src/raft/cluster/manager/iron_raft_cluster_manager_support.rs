@@ -160,12 +160,33 @@ impl IronRaftClusterManagerSupport {
     // 启动 leader 清理不可达 learner 节点的后台任务。
     pub(crate) fn spawn_learner_cleanup(raft: Raft<IronRaftTypeConfig>) {
         tokio::spawn(async move {
+            let mut was_leader = false;
+
             loop {
                 tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;
 
                 let metrics = raft.metrics().borrow().clone();
                 if metrics.state != ServerState::Leader {
+                    was_leader = false;
                     continue;
+                }
+
+                if !was_leader {
+                    tracing::info!(
+                        node_id = metrics.id,
+                        "[Iron] [cluster] 当前节点已成为领导节点(leader)，开始承担集群维护任务"
+                    );
+                    was_leader = true;
+                }
+
+                for (node_id, node_addr) in Self::collect_voter_nodes(&raft).await {
+                    if Self::confirm_voter_unreachable(node_id, &node_addr).await {
+                        tracing::info!(
+                            node_id,
+                            node_addr = %node_addr,
+                            "[Iron] [cluster] leader 确认投票节点(voter)不可达，保持集群成员关系不变"
+                        );
+                    }
                 }
 
                 for (node_id, node_addr) in Self::collect_learner_nodes(&raft).await {
@@ -334,6 +355,32 @@ impl IronRaftClusterManagerSupport {
             .collect()
     }
 
+    // 收集当前 membership 中除 leader 自身外的投票节点。
+    async fn collect_voter_nodes(raft: &Raft<IronRaftTypeConfig>) -> Vec<(u64, String)> {
+        let metrics = raft.metrics().borrow().clone();
+        if metrics.state != ServerState::Leader {
+            return Vec::new();
+        }
+
+        let self_node_id = metrics.id;
+        metrics
+            .membership_config
+            .membership()
+            .voter_ids()
+            .filter_map(|node_id| {
+                if node_id == self_node_id {
+                    None
+                } else {
+                    metrics
+                        .membership_config
+                        .membership()
+                        .get_node(&node_id)
+                        .map(|node| (node_id, node.addr.clone()))
+                }
+            })
+            .collect()
+    }
+
     // 连续嗅探确认 learner 节点是否不可达。
     async fn confirm_learner_unreachable(node_id: u64, node_addr: &str) -> bool {
         if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
@@ -347,6 +394,29 @@ impl IronRaftClusterManagerSupport {
         );
 
         for _ in 1..LEARNER_CLEANUP_PROBE_COUNT {
+            tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;
+            if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    // 连续嗅探确认投票节点是否不可达。
+    async fn confirm_voter_unreachable(node_id: u64, node_addr: &str) -> bool {
+        if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
+            return false;
+        }
+
+        tracing::info!(
+            node_id,
+            node_addr = %node_addr,
+            "[Iron] [cluster] leader 发现投票节点(voter) TCP 不可达，开始确认"
+        );
+
+        for _ in 1..LEARNER_CLEANUP_PROBE_COUNT {
+            tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;
             if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
                 return false;
             }
