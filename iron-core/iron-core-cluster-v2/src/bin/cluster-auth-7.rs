@@ -5,30 +5,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     use iron_core_cluster_v2::logging::init_cluster_logging;
     use iron_core_cluster_v2::raft::cluster::iron_raft_cluster_manager::IronRaftClusterManager;
-    use iron_core_cluster_v2::raft::cluster::iron_raft_node::IronRaftNode;
+    use iron_core_cluster_v2::raft::cluster::iron_raft_node::{IronRaftNode, IronRaftNodeRole};
 
     init_cluster_logging();
     let boot_nodes = BTreeMap::from([
         (
             1,
-            IronRaftNode::new_boot(1, "cluster-reg-1", "127.0.0.1:5001", Some("127.0.0.1:7101".to_string())),
+            IronRaftNode::new(1, "cluster-reg-1", "127.0.0.1:5001", Some("127.0.0.1:7101".to_string()), IronRaftNodeRole::Boot),
         ),
         (
             2,
-            IronRaftNode::new_boot(2, "cluster-reg-2", "127.0.0.1:5002", Some("127.0.0.1:7102".to_string())),
+            IronRaftNode::new(2, "cluster-reg-2", "127.0.0.1:5002", Some("127.0.0.1:7102".to_string()), IronRaftNodeRole::Boot),
         ),
         (
             3,
-            IronRaftNode::new_boot(3, "cluster-reg-3", "127.0.0.1:5003", Some("127.0.0.1:7103".to_string())),
+            IronRaftNode::new(3, "cluster-reg-3", "127.0.0.1:5003", Some("127.0.0.1:7103".to_string()), IronRaftNodeRole::Boot),
         ),
     ]);
     let cluster_manager = IronRaftClusterManager::new(
-        IronRaftNode::new_normal(
-            7,
-            "cluster-auth",
-            "127.0.0.1:5007",
-            Some("127.0.0.1:7107".to_string()),
-        ),
+        IronRaftNode::new(7, "cluster-auth", "127.0.0.1:5007", Some("127.0.0.1:7107".to_string()), IronRaftNodeRole::Normal),
         boot_nodes,
     );
 

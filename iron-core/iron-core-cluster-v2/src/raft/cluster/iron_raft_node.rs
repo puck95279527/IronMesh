@@ -41,38 +41,6 @@ impl IronRaftNode {
         }
     }
 
-    // 创建启动节点配置。
-    pub fn new_boot(
-        node_id: u64,
-        node_name: impl Into<String>,
-        node_addr: impl Into<String>,
-        http_debug_addr: Option<String>,
-    ) -> Self {
-        Self::new(
-            node_id,
-            node_name,
-            node_addr,
-            http_debug_addr,
-            IronRaftNodeRole::Boot,
-        )
-    }
-
-    // 创建普通节点配置。
-    pub fn new_normal(
-        node_id: u64,
-        node_name: impl Into<String>,
-        node_addr: impl Into<String>,
-        http_debug_addr: Option<String>,
-    ) -> Self {
-        Self::new(
-            node_id,
-            node_name,
-            node_addr,
-            http_debug_addr,
-            IronRaftNodeRole::Normal,
-        )
-    }
-
     // 判断当前节点是否为启动节点。
     pub fn is_boot_node(&self) -> bool {
         matches!(self.node_role, IronRaftNodeRole::Boot)
