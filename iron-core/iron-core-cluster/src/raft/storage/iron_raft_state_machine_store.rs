@@ -77,14 +77,11 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
 
             let response = match entry.payload {
                 EntryPayload::Blank => IronRaftResponse::default(),
-                EntryPayload::Normal(IronRaftRequest::Set { key, value }) => {
-                    self.state_machine
-                        .lock()
-                        .await
-                        .data
-                        .insert(key, value.clone());
-                    IronRaftResponse { value: Some(value) }
-                }
+                EntryPayload::Normal(IronRaftRequest::ClusterData(command)) => self
+                    .state_machine
+                    .lock()
+                    .await
+                    .apply_cluster_data_command(command),
                 EntryPayload::Membership(_) => IronRaftResponse::default(),
             };
 
@@ -113,7 +110,7 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
         snapshot: Box<Cursor<Vec<u8>>>,
     ) -> Result<(), StorageError<u64>> {
         let data = snapshot.into_inner();
-        let state_machine_data =
+        let state_machine_data: IronRaftStateMachineData =
             serde_json::from_slice(&data).map_err(|error| StorageError::IO {
                 source: StorageIOError::read_snapshot(
                     Some(meta.signature()),
@@ -123,9 +120,7 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
 
         *self.last_applied_log.lock().await = meta.last_log_id.clone();
         *self.last_membership.lock().await = meta.last_membership.clone();
-        *self.state_machine.lock().await = IronRaftStateMachineData {
-            data: state_machine_data,
-        };
+        *self.state_machine.lock().await = state_machine_data;
         *self.current_snapshot.lock().await = Some(IronRaftStoredSnapshot {
             meta: meta.clone(),
             data,
@@ -154,7 +149,7 @@ impl RaftSnapshotBuilder<IronRaftTypeConfig> for IronRaftStateMachineStore {
     // 构建当前状态机快照。
     async fn build_snapshot(&mut self) -> Result<Snapshot<IronRaftTypeConfig>, StorageError<u64>> {
         let state_machine = self.state_machine.lock().await;
-        let data = serde_json::to_vec(&state_machine.data).map_err(|error| StorageError::IO {
+        let data = serde_json::to_vec(&*state_machine).map_err(|error| StorageError::IO {
             source: StorageIOError::write_snapshot(None, openraft::AnyError::new(&error)),
         })?;
         drop(state_machine);
