@@ -28,6 +28,15 @@ const BOOTSTRAP_LOCK_ADDR: &str = "127.0.0.1:4999";
 // 节点 TCP 可达性探测超时时间。
 const PEER_REACHABLE_TIMEOUT: Duration = Duration::from_millis(100);
 
+// learner 清理任务扫描间隔。
+const LEARNER_CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
+
+// learner 清理任务单次 TCP 嗅探超时时间。
+const LEARNER_CLEANUP_PROBE_TIMEOUT: Duration = Duration::from_millis(300);
+
+// learner 清理任务连续失败确认次数。
+const LEARNER_CLEANUP_PROBE_COUNT: usize = 3;
+
 // IronMesh Raft 集群管理辅助动作。
 pub struct IronRaftClusterManagerSupport;
 
@@ -144,6 +153,26 @@ impl IronRaftClusterManagerSupport {
         tokio::spawn(async move {
             if let Err(error) = tcp_server.serve(node_addr).await {
                 tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
+            }
+        });
+    }
+
+    // 启动 leader 清理不可达 learner 节点的后台任务。
+    pub(crate) fn spawn_learner_cleanup(raft: Raft<IronRaftTypeConfig>) {
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;
+
+                let metrics = raft.metrics().borrow().clone();
+                if metrics.state != ServerState::Leader {
+                    continue;
+                }
+
+                for (node_id, node_addr) in Self::collect_learner_nodes(&raft).await {
+                    if Self::confirm_learner_unreachable(node_id, &node_addr).await {
+                        Self::remove_unreachable_learner(&raft, node_id, node_addr).await;
+                    }
+                }
             }
         });
     }
@@ -268,14 +297,110 @@ impl IronRaftClusterManagerSupport {
 
     // 探测目标节点 TCP 地址是否可达。
     pub async fn is_peer_reachable(node_addr: &str) -> bool {
+        Self::is_tcp_reachable_with_timeout(node_addr, PEER_REACHABLE_TIMEOUT).await
+    }
+
+    // 按指定超时时间探测目标 TCP 地址是否可达。
+    async fn is_tcp_reachable_with_timeout(node_addr: &str, timeout: Duration) -> bool {
         matches!(
-            tokio::time::timeout(
-                PEER_REACHABLE_TIMEOUT,
-                tokio::net::TcpStream::connect(node_addr)
-            )
-            .await,
+            tokio::time::timeout(timeout, tokio::net::TcpStream::connect(node_addr)).await,
             Ok(Ok(_))
         )
+    }
+
+    // 收集当前 membership 中的 learner 节点。
+    async fn collect_learner_nodes(raft: &Raft<IronRaftTypeConfig>) -> Vec<(u64, String)> {
+        let metrics = raft.metrics().borrow().clone();
+        if metrics.state != ServerState::Leader {
+            return Vec::new();
+        }
+
+        let voter_ids = metrics
+            .membership_config
+            .membership()
+            .voter_ids()
+            .collect::<BTreeSet<_>>();
+
+        metrics
+            .membership_config
+            .nodes()
+            .filter_map(|(node_id, node)| {
+                if voter_ids.contains(node_id) {
+                    None
+                } else {
+                    Some((*node_id, node.addr.clone()))
+                }
+            })
+            .collect()
+    }
+
+    // 连续嗅探确认 learner 节点是否不可达。
+    async fn confirm_learner_unreachable(node_id: u64, node_addr: &str) -> bool {
+        if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
+            return false;
+        }
+
+        tracing::info!(
+            node_id,
+            node_addr = %node_addr,
+            "[Iron] [cluster] leader 发现 learner 节点 TCP 不可达，开始确认"
+        );
+
+        for _ in 1..LEARNER_CLEANUP_PROBE_COUNT {
+            if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    // 移除确认不可达的 learner 节点。
+    async fn remove_unreachable_learner(
+        raft: &Raft<IronRaftTypeConfig>,
+        node_id: u64,
+        node_addr: String,
+    ) {
+        let metrics = raft.metrics().borrow().clone();
+        if metrics.state != ServerState::Leader {
+            return;
+        }
+
+        let membership = metrics.membership_config.membership();
+        let voter_ids = membership.voter_ids().collect::<BTreeSet<_>>();
+        if voter_ids.contains(&node_id) {
+            tracing::info!(
+                node_id,
+                node_addr = %node_addr,
+                "[Iron] [cluster] 投票节点(voter)不允许自动移出，已跳过"
+            );
+            return;
+        }
+
+        if membership.get_node(&node_id).is_none() {
+            return;
+        }
+
+        match raft
+            .change_membership(ChangeMembers::RemoveNodes(BTreeSet::from([node_id])), true)
+            .await
+        {
+            Ok(_) => {
+                tracing::info!(
+                    node_id,
+                    node_addr = %node_addr,
+                    "[Iron] [cluster] leader 已将不可达 learner 节点移出集群"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    node_id,
+                    node_addr = %node_addr,
+                    %error,
+                    "[Iron] [cluster] leader 移出不可达 learner 节点失败"
+                );
+            }
+        }
     }
 
     // 将单个 boot 节点加入集群。

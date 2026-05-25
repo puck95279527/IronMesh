@@ -87,6 +87,7 @@ impl IronRaftClusterManagerFlow {
         node_addr: String,
     ) {
         IronRaftClusterManagerSupport::spawn_raft_tcp_server(tcp_server, node_addr);
+        IronRaftClusterManagerSupport::spawn_learner_cleanup(raft.clone());
         IronRaftClusterManagerSupport::spawn_debug_http(manager, raft);
     }
 
