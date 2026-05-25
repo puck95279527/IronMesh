@@ -23,6 +23,8 @@ use openraft::raft::VoteResponse;
 use tokio::sync::Mutex;
 
 use crate::raft::iron_raft_constants::JOIN_NODE_TIMEOUT;
+use crate::raft::model::command::iron_raft_request::IronRaftRequest;
+use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_request::IronRaftFullSnapshotRequest;
@@ -164,6 +166,31 @@ impl IronRaftTcpClient {
 
 // IronMesh 自定义扩展协议相关方法。
 impl IronRaftTcpClient {
+    // 请求目标节点执行客户端业务写入。
+    pub async fn client_write(
+        &self,
+        request: IronRaftRequest,
+    ) -> Result<IronRaftResponse, std::io::Error> {
+        let request = IronRaftTcpRpcRequest::ClientWrite(request);
+
+        match tokio::time::timeout(JOIN_NODE_TIMEOUT, self.send_request_with_retry(request)).await {
+            Ok(result) => match result? {
+                IronRaftTcpRpcResponse::ClientWrite(Ok(response)) => Ok(response),
+                IronRaftTcpRpcResponse::ClientWrite(Err(error)) => {
+                    Err(std::io::Error::new(std::io::ErrorKind::Other, error))
+                }
+                _ => Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unexpected tcp response kind",
+                )),
+            },
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "raft tcp client write timeout",
+            )),
+        }
+    }
+
     // 请求目标节点把当前节点加入集群。
     pub async fn join_node(
         &self,

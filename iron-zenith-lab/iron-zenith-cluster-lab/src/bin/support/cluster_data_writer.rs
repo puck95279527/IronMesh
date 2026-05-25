@@ -1,0 +1,23 @@
+use iron_core_cluster::cluster_api::iron_cluster_handle::IronClusterHandle;
+use iron_core_cluster::cluster_data::iron_cluster_data_command::IronClusterDataCommand;
+
+// 写入当前验证节点自己的集群业务数据。
+pub(crate) async fn write_current_node_cluster_data(
+    cluster_handle: &IronClusterHandle,
+    node_id: u64,
+    node_name: &str,
+    node_addr: &str,
+    node_role: &str,
+) {
+    let key = format!("cluster/node/{node_id}");
+    let value = format!("{node_name}|{node_addr}|{node_role}");
+    let result = cluster_handle
+        .write_cluster_data(IronClusterDataCommand::Set { key, value })
+        .await;
+
+    if let Err(error) = result {
+        eprintln!(
+            "[Iron] [cluster-lab] 集群业务数据写入失败 node_id={node_id} node_name={node_name} error={error}"
+        );
+    }
+}

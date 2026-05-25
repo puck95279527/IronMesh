@@ -121,6 +121,14 @@ impl IronRaftTcpServer {
                         .map(|resp| Self::build_response(resp.vote));
                     IronRaftTcpRpcResponse::FullSnapshot(result)
                 }
+                IronRaftTcpRpcRequest::ClientWrite(request) => {
+                    let result = raft
+                        .client_write(request)
+                        .await
+                        .map(|response| response.data)
+                        .map_err(|error| error.to_string());
+                    IronRaftTcpRpcResponse::ClientWrite(result)
+                }
                 IronRaftTcpRpcRequest::JoinNode {
                     node_id,
                     node_name,
