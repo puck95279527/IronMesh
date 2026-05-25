@@ -19,6 +19,7 @@ use crate::raft::cluster::iron_raft_node::IronRaftNode;
 use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
 use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_INTERVAL;
+use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_LIMIT;
 use crate::raft::iron_raft_constants::CLUSTER_INITIALIZE_DELAY;
 use crate::raft::iron_raft_constants::JOIN_LOCAL_READY_TIMEOUT;
 use crate::raft::iron_raft_constants::LEARNER_REMOVE_RETRY_INTERVAL;
@@ -475,20 +476,27 @@ impl IronRaftClusterManagerSupport {
 
         let target_basic_node = openraft::BasicNode::new(target_node.node_addr.clone());
 
-        loop {
+        for attempt in 1..=BOOT_NODE_JOIN_RETRY_LIMIT {
             match raft
                 .add_learner(target_id, target_basic_node.clone(), true)
                 .await
             {
                 Ok(_) => break,
+                Err(error) if attempt == BOOT_NODE_JOIN_RETRY_LIMIT => {
+                    return Err(IoError::new(
+                        ErrorKind::TimedOut,
+                        format!("注册节点加入 learner 超过最大重试次数: {error}"),
+                    )
+                    .into());
+                }
                 Err(error) => {
-                    tracing::warn!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 加入 learner 失败，稍后重试");
+                    tracing::warn!(%self_tag, %peer_tag, attempt, %error, "[Iron] [cluster] 加入 learner 失败，稍后重试");
                     tokio::time::sleep(BOOT_NODE_JOIN_RETRY_INTERVAL).await;
                 }
             }
         }
 
-        loop {
+        for attempt in 1..=BOOT_NODE_JOIN_RETRY_LIMIT {
             match raft
                 .change_membership(
                     ChangeMembers::AddVoterIds(BTreeSet::from([target_id])),
@@ -497,8 +505,15 @@ impl IronRaftClusterManagerSupport {
                 .await
             {
                 Ok(_) => break,
+                Err(error) if attempt == BOOT_NODE_JOIN_RETRY_LIMIT => {
+                    return Err(IoError::new(
+                        ErrorKind::TimedOut,
+                        format!("注册节点提升为 voter 超过最大重试次数: {error}"),
+                    )
+                    .into());
+                }
                 Err(error) => {
-                    tracing::warn!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 提升为 voter 失败，稍后重试");
+                    tracing::warn!(%self_tag, %peer_tag, attempt, %error, "[Iron] [cluster] 提升为 voter 失败，稍后重试");
                     tokio::time::sleep(BOOT_NODE_JOIN_RETRY_INTERVAL).await;
                 }
             }

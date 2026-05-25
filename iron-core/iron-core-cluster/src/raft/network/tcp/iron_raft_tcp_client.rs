@@ -23,6 +23,7 @@ use openraft::raft::VoteResponse;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
+use crate::raft::iron_raft_constants::CLIENT_WRITE_TIMEOUT;
 use crate::raft::iron_raft_constants::JOIN_NODE_TIMEOUT;
 use crate::raft::model::command::iron_raft_request::IronRaftRequest;
 use crate::raft::model::command::iron_raft_response::IronRaftResponse;
@@ -205,7 +206,9 @@ impl IronRaftTcpClient {
     ) -> Result<IronRaftResponse, std::io::Error> {
         let request = IronRaftTcpRpcRequest::ClientWrite(request);
 
-        match tokio::time::timeout(JOIN_NODE_TIMEOUT, self.send_request_with_retry(request)).await {
+        match tokio::time::timeout(CLIENT_WRITE_TIMEOUT, self.send_request_with_retry(request))
+            .await
+        {
             Ok(result) => match result? {
                 IronRaftTcpRpcResponse::ClientWrite(Ok(response)) => Ok(response),
                 IronRaftTcpRpcResponse::ClientWrite(Err(error)) => {

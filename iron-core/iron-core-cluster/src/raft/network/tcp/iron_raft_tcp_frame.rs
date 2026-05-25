@@ -4,6 +4,7 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 use crate::raft::iron_raft_constants::MAX_FRAME_BODY_LEN;
+use crate::raft::iron_raft_constants::TCP_FRAME_HEADER_IDLE_TIMEOUT;
 use crate::raft::iron_raft_constants::TCP_FRAME_READ_TIMEOUT;
 use crate::raft::iron_raft_constants::TCP_FRAME_WRITE_TIMEOUT;
 
@@ -20,8 +21,21 @@ impl IronRaftTcpFrame {
         T: DeserializeOwned,
     {
         let mut header = [0_u8; Self::HEADER_LEN];
-        // 等待下一帧头时不设置空闲超时，让集群内部长连接可以持续复用。
-        stream.read_exact(&mut header).await?;
+        match tokio::time::timeout(
+            TCP_FRAME_HEADER_IDLE_TIMEOUT,
+            stream.read_exact(&mut header),
+        )
+        .await
+        {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => return Err(error),
+            Err(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "raft tcp frame header idle timeout",
+                ));
+            }
+        }
 
         let body_len = u32::from_be_bytes(header) as usize;
         if body_len > MAX_FRAME_BODY_LEN {
@@ -70,6 +84,7 @@ impl IronRaftTcpFrame {
                 | std::io::ErrorKind::ConnectionReset
                 | std::io::ErrorKind::ConnectionAborted
                 | std::io::ErrorKind::BrokenPipe
+                | std::io::ErrorKind::TimedOut
         )
     }
 

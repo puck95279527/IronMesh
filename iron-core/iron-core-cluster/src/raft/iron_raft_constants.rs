@@ -28,6 +28,9 @@ pub(crate) const BOOT_NODE_JOIN_EMPTY_ROUND_INTERVAL: Duration = Duration::from_
 // 注册节点加入为 learner 或 voter 失败后的重试间隔。
 pub(crate) const BOOT_NODE_JOIN_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
+// 注册节点加入为 learner 或 voter 的最大重试次数。
+pub(crate) const BOOT_NODE_JOIN_RETRY_LIMIT: usize = 5;
+
 // 节点加入 RPC 成功后等待本地 Raft 状态就绪的超时时间。
 pub(crate) const JOIN_LOCAL_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -45,6 +48,9 @@ pub(crate) const MAX_FRAME_BODY_LEN: usize = 16 * 1024 * 1024;
 // TCP frame 单次读取超时时间。
 pub(crate) const TCP_FRAME_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
+// TCP frame 等待下一帧头的空闲超时时间。
+pub(crate) const TCP_FRAME_HEADER_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
 // TCP frame 单次写入和 flush 超时时间。
 pub(crate) const TCP_FRAME_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -55,6 +61,9 @@ pub(crate) const MAX_TCP_CONNECTIONS: usize = 256;
 
 // 节点加入 TCP RPC 超时时间。
 pub(crate) const JOIN_NODE_TIMEOUT: Duration = Duration::from_millis(500);
+
+// 客户端业务写入 TCP RPC 超时时间。
+pub(crate) const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 // 节点 TCP 可达性探测超时时间。
 pub(crate) const PEER_REACHABLE_TIMEOUT: Duration = Duration::from_millis(100);
