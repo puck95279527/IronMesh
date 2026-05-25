@@ -29,6 +29,7 @@ use crate::raft::model::command::iron_raft_request::IronRaftRequest;
 use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
+use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotNode;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_request::IronRaftFullSnapshotRequest;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkEvent;
@@ -78,10 +79,18 @@ impl IronRaftTcpClient {
                 (None, None, None)
             };
 
-        let membership = meta
-            .last_membership
-            .membership()
-            .voter_ids()
+        let membership = meta.last_membership.membership();
+        let membership_configs = membership
+            .get_joint_config()
+            .iter()
+            .map(|config| config.iter().cloned().collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        let membership_nodes = membership
+            .nodes()
+            .map(|(node_id, node)| IronRaftFullSnapshotNode {
+                node_id: *node_id,
+                node_addr: node.addr.clone(),
+            })
             .collect::<Vec<_>>();
 
         IronRaftFullSnapshotMeta {
@@ -89,7 +98,8 @@ impl IronRaftTcpClient {
             last_log_term,
             last_log_node_id,
             last_log_index,
-            membership,
+            membership_configs,
+            membership_nodes,
         }
     }
 

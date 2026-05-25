@@ -192,18 +192,22 @@ impl IronRaftTcpServer {
             _ => None,
         };
 
-        let voters = meta.membership.iter().cloned().collect::<BTreeSet<_>>();
-        let nodes = meta
-            .membership
+        let voters = meta
+            .membership_configs
             .iter()
-            .map(|node_id| {
+            .map(|config| config.iter().cloned().collect::<BTreeSet<_>>())
+            .collect::<Vec<_>>();
+        let nodes = meta
+            .membership_nodes
+            .iter()
+            .map(|node| {
                 (
-                    *node_id,
-                    openraft::BasicNode::new(format!("127.0.0.1:500{node_id}")),
+                    node.node_id,
+                    openraft::BasicNode::new(node.node_addr.clone()),
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        let membership = Membership::new(vec![voters], nodes);
+        let membership = Membership::new(voters, nodes);
         let stored_membership = StoredMembership::new(last_log_id.clone(), membership);
 
         SnapshotMeta {
