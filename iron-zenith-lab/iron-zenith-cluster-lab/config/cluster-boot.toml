@@ -1,4 +1,4 @@
-# IronMesh Raft 节点配置。
+# IronMesh Raft 节点验证配置。
 [[IronRaftNode]]
 node_id = 1
 node_name = "cluster-reg-1"

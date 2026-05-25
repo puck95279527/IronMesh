@@ -1,4 +1,4 @@
-// 启动注册 Raft 节点。
+// 启动注册 Raft 验证节点。
 mod support;
 
 #[tokio::main]
@@ -9,10 +9,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     init_cluster_process_logging()?;
     let cluster_manager = IronRaftClusterManager::new(IronRaftNode::new(
-        2,
-        "cluster-reg-2",
-        "127.0.0.1:5002",
-        Some("127.0.0.1:7102".to_string()),
+        1,
+        "cluster-reg-1",
+        "127.0.0.1:5001",
+        Some("127.0.0.1:7101".to_string()),
         IronRaftNodeRole::Boot,
     ))?;
 

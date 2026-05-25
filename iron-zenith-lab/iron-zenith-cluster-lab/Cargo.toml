@@ -1,0 +1,10 @@
+[package]
+name = "iron-zenith-cluster-lab"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+
+[dependencies]
+iron-core-cluster.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true

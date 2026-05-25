@@ -661,7 +661,6 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -697,6 +696,15 @@ version = "0.1.0"
 [[package]]
 name = "iron-service-registry"
 version = "0.1.0"
+
+[[package]]
+name = "iron-zenith-cluster-lab"
+version = "0.1.0"
+dependencies = [
+ "iron-core-cluster",
+ "tokio",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "is_terminal_polyfill"

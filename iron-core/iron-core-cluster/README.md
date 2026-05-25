@@ -11,7 +11,7 @@
 | 不做持久化 | Raft log、vote、state machine、snapshot 继续使用内存实现。 |
 | 不扩散功能 | 优先保证现有启动、TCP 通信、成员维护、日志和运行稳定性。 |
 | 库不默认阻塞 | `start()` 等待当前节点完成起盘或加入集群后返回运行句柄。 |
-| 服务壳显式阻塞 | `src/bin/*` 通过 `wait_forever()` 决定是否常驻运行。 |
+| 服务壳显式阻塞 | 外层启动壳通过 `wait_forever()` 决定是否常驻运行，验证启动器放在 `iron-zenith-lab/iron-zenith-cluster-lab`。 |
 | 固定 Boot 起盘 | 配置中唯一 `is_boot_node = true` 的注册节点负责首次起盘。 |
 | 不自动移除 voter | `cluster-reg-*` 投票节点只探测和记录日志，不自动从 membership 移除。 |
 | learner 自动移除 | learner 节点 TCP 不可达后，由 leader 确认并移出集群。 |
@@ -32,6 +32,7 @@
 | 常量维护 | 已完成 | Raft、启动流程、TCP、join、维护任务常量集中在 `iron_raft_constants.rs`。 |
 | metrics 查询 | 保持 | `/raft/metrics` 直接暴露 OpenRaft 真实 metrics，便于观察真实集群关系。 |
 | 存储模型 | 保持 | 内存 Raft log、state machine、snapshot 是当前明确设计目标。 |
+| 验证入口 | 已迁移 | 固定本机端口的集群启动器已移动到 `iron-zenith-lab/iron-zenith-cluster-lab`。 |
 
 ## 仍需优化
 
