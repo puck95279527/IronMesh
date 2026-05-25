@@ -18,7 +18,7 @@ pub struct IronRaftLogStore {
     pub last_purged_log_id: Arc<Mutex<Option<openraft::LogId<u64>>>>, // 已清理的最后一条日志标识。
     pub logs: Arc<Mutex<BTreeMap<u64, openraft::Entry<IronRaftTypeConfig>>>>, // 按日志索引保存的 Raft 日志。
     pub committed: Arc<Mutex<Option<openraft::LogId<u64>>>>, // 已提交的最后一条日志标识。
-    pub vote: Arc<Mutex<Option<openraft::Vote<u64>>>>, // 当前节点保存的投票状态。
+    pub vote: Arc<Mutex<Option<openraft::Vote<u64>>>>,       // 当前节点保存的投票状态。
 }
 
 impl Default for IronRaftLogStore {
@@ -45,7 +45,6 @@ impl RaftLogReader<IronRaftTypeConfig> for IronRaftLogStore {
         let logs = self.logs.lock().await;
         Ok(logs.range(range).map(|(_, entry)| entry.clone()).collect())
     }
-
 }
 
 impl RaftLogStorage<IronRaftTypeConfig> for IronRaftLogStore {
@@ -84,7 +83,10 @@ impl RaftLogStorage<IronRaftTypeConfig> for IronRaftLogStore {
     }
 
     // 保存提交位置。
-    async fn save_committed(&mut self, committed: Option<openraft::LogId<u64>>) -> Result<(), StorageError<u64>> {
+    async fn save_committed(
+        &mut self,
+        committed: Option<openraft::LogId<u64>>,
+    ) -> Result<(), StorageError<u64>> {
         *self.committed.lock().await = committed;
         Ok(())
     }
@@ -95,7 +97,11 @@ impl RaftLogStorage<IronRaftTypeConfig> for IronRaftLogStore {
     }
 
     // 追加日志。
-    async fn append<I>(&mut self, entries: I, callback: LogFlushed<IronRaftTypeConfig>) -> Result<(), StorageError<u64>>
+    async fn append<I>(
+        &mut self,
+        entries: I,
+        callback: LogFlushed<IronRaftTypeConfig>,
+    ) -> Result<(), StorageError<u64>>
     where
         I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig>> + openraft::OptionalSend,
         I::IntoIter: openraft::OptionalSend,
@@ -112,7 +118,10 @@ impl RaftLogStorage<IronRaftTypeConfig> for IronRaftLogStore {
     // 截断指定日志及之后的日志。
     async fn truncate(&mut self, log_id: openraft::LogId<u64>) -> Result<(), StorageError<u64>> {
         let mut logs = self.logs.lock().await;
-        let keys = logs.range(log_id.index..).map(|(key, _)| *key).collect::<Vec<_>>();
+        let keys = logs
+            .range(log_id.index..)
+            .map(|(key, _)| *key)
+            .collect::<Vec<_>>();
         for key in keys {
             logs.remove(&key);
         }
@@ -125,7 +134,10 @@ impl RaftLogStorage<IronRaftTypeConfig> for IronRaftLogStore {
         *self.last_purged_log_id.lock().await = Some(log_id.clone());
 
         let mut logs = self.logs.lock().await;
-        let keys = logs.range(..=log_id.index).map(|(key, _)| *key).collect::<Vec<_>>();
+        let keys = logs
+            .range(..=log_id.index)
+            .map(|(key, _)| *key)
+            .collect::<Vec<_>>();
         for key in keys {
             logs.remove(&key);
         }

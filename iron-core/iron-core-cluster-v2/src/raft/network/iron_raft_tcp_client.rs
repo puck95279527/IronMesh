@@ -59,17 +59,22 @@ impl IronRaftTcpClient {
     fn build_snapshot_meta(
         meta: &SnapshotMeta<u64, openraft::BasicNode>,
     ) -> IronRaftFullSnapshotMeta {
-        let (last_log_term, last_log_node_id, last_log_index) = if let Some(log_id) = &meta.last_log_id {
-            (
-                Some(log_id.leader_id.term),
-                Some(log_id.leader_id.node_id),
-                Some(log_id.index),
-            )
-        } else {
-            (None, None, None)
-        };
+        let (last_log_term, last_log_node_id, last_log_index) =
+            if let Some(log_id) = &meta.last_log_id {
+                (
+                    Some(log_id.leader_id.term),
+                    Some(log_id.leader_id.node_id),
+                    Some(log_id.index),
+                )
+            } else {
+                (None, None, None)
+            };
 
-        let membership = meta.last_membership.membership().voter_ids().collect::<Vec<_>>();
+        let membership = meta
+            .last_membership
+            .membership()
+            .voter_ids()
+            .collect::<Vec<_>>();
 
         IronRaftFullSnapshotMeta {
             snapshot_id: meta.snapshot_id.clone(),
@@ -200,7 +205,8 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftTcpClient {
         &mut self,
         rpc: AppendEntriesRequest<IronRaftTypeConfig>,
         option: openraft::network::RPCOption,
-    ) -> Result<AppendEntriesResponse<u64>, RPCError<u64, openraft::BasicNode, RaftError<u64>>> {
+    ) -> Result<AppendEntriesResponse<u64>, RPCError<u64, openraft::BasicNode, RaftError<u64>>>
+    {
         let request = IronRaftTcpRpcRequest::AppendEntries(rpc);
         let response = self
             .send_request_with_option(request, &option)
@@ -208,11 +214,14 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftTcpClient {
             .map_err(|error| Self::network_error(&error))?;
 
         match response {
-            IronRaftTcpRpcResponse::AppendEntries(result) => {
-                result.map_err(|error| RPCError::RemoteError(RemoteError::new(self.target_node_id, error)))
-            }
+            IronRaftTcpRpcResponse::AppendEntries(result) => result.map_err(|error| {
+                RPCError::RemoteError(RemoteError::new(self.target_node_id, error))
+            }),
             _ => {
-                let error = std::io::Error::new(std::io::ErrorKind::InvalidData, "unexpected tcp response kind");
+                let error = std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unexpected tcp response kind",
+                );
                 Err(Self::network_error(&error))
             }
         }
@@ -223,8 +232,14 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftTcpClient {
         &mut self,
         _rpc: InstallSnapshotRequest<IronRaftTypeConfig>,
         _option: openraft::network::RPCOption,
-    ) -> Result<InstallSnapshotResponse<u64>, RPCError<u64, openraft::BasicNode, RaftError<u64, InstallSnapshotError>>> {
-        let error = std::io::Error::new(std::io::ErrorKind::Unsupported, "tcp install_snapshot is not used");
+    ) -> Result<
+        InstallSnapshotResponse<u64>,
+        RPCError<u64, openraft::BasicNode, RaftError<u64, InstallSnapshotError>>,
+    > {
+        let error = std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "tcp install_snapshot is not used",
+        );
         Err(Self::snapshot_network_error(&error))
     }
 
@@ -241,11 +256,14 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftTcpClient {
             .map_err(|error| Self::network_error(&error))?;
 
         match response {
-            IronRaftTcpRpcResponse::Vote(result) => {
-                result.map_err(|error| RPCError::RemoteError(RemoteError::new(self.target_node_id, error)))
-            }
+            IronRaftTcpRpcResponse::Vote(result) => result.map_err(|error| {
+                RPCError::RemoteError(RemoteError::new(self.target_node_id, error))
+            }),
             _ => {
-                let error = std::io::Error::new(std::io::ErrorKind::InvalidData, "unexpected tcp response kind");
+                let error = std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unexpected tcp response kind",
+                );
                 Err(Self::network_error(&error))
             }
         }
@@ -277,10 +295,16 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftTcpClient {
         match response {
             IronRaftTcpRpcResponse::FullSnapshot(result) => match result {
                 Ok(data) => Ok(SnapshotResponse::new(Self::build_vote_from_response(data))),
-                Err(error) => Err(StreamingError::RemoteError(RemoteError::new(self.target_node_id, error))),
+                Err(error) => Err(StreamingError::RemoteError(RemoteError::new(
+                    self.target_node_id,
+                    error,
+                ))),
             },
             _ => {
-                let error = std::io::Error::new(std::io::ErrorKind::InvalidData, "unexpected tcp response kind");
+                let error = std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unexpected tcp response kind",
+                );
                 Err(StreamingError::Network(NetworkError::new(&error)))
             }
         }

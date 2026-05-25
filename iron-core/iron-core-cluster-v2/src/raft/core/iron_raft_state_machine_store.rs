@@ -8,12 +8,12 @@ use openraft::SnapshotMeta;
 use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::entry::RaftPayload;
-use tokio::sync::Mutex;
 use openraft::storage::RaftStateMachine;
+use tokio::sync::Mutex;
 
+use crate::raft::dto::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::raft::model::iron_raft_request::IronRaftRequest;
 use crate::raft::model::iron_raft_stored_snapshot::IronRaftStoredSnapshot;
-use crate::raft::dto::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 
 // IronMesh Raft 最小状态机存储模型。
@@ -22,7 +22,7 @@ pub struct IronRaftStateMachineStore {
     pub last_applied_log: Arc<Mutex<Option<openraft::LogId<u64>>>>, // 状态机已经应用的最后一条日志标识。
     pub last_membership: Arc<Mutex<openraft::StoredMembership<u64, openraft::BasicNode>>>, // 状态机已经应用的最后一个成员关系。
     pub state_machine: Arc<Mutex<IronRaftStateMachineData>>, // 当前节点持有的最小状态机数据。
-    pub snapshot_idx: Arc<Mutex<u64>>, // 用于生成快照标识的递增序号。
+    pub snapshot_idx: Arc<Mutex<u64>>,                       // 用于生成快照标识的递增序号。
     pub current_snapshot: Arc<Mutex<Option<IronRaftStoredSnapshot>>>, // 当前状态机保存的快照。
 }
 
@@ -45,13 +45,24 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
     // 读取状态机已经应用的状态。
     async fn applied_state(
         &mut self,
-    ) -> Result<(Option<openraft::LogId<u64>>, openraft::StoredMembership<u64, openraft::BasicNode>), StorageError<u64>>
-    {
-        Ok((self.last_applied_log.lock().await.clone(), self.last_membership.lock().await.clone()))
+    ) -> Result<
+        (
+            Option<openraft::LogId<u64>>,
+            openraft::StoredMembership<u64, openraft::BasicNode>,
+        ),
+        StorageError<u64>,
+    > {
+        Ok((
+            self.last_applied_log.lock().await.clone(),
+            self.last_membership.lock().await.clone(),
+        ))
     }
 
     // 应用已经提交的日志到状态机。
-    async fn apply<I>(&mut self, entries: I) -> Result<Vec<crate::raft::model::iron_raft_response::IronRaftResponse>, StorageError<u64>>
+    async fn apply<I>(
+        &mut self,
+        entries: I,
+    ) -> Result<Vec<crate::raft::model::iron_raft_response::IronRaftResponse>, StorageError<u64>>
     where
         I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig>> + openraft::OptionalSend,
         I::IntoIter: openraft::OptionalSend,
@@ -67,12 +78,20 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
             }
 
             let response = match entry.payload {
-                EntryPayload::Blank => crate::raft::model::iron_raft_response::IronRaftResponse::default(),
+                EntryPayload::Blank => {
+                    crate::raft::model::iron_raft_response::IronRaftResponse::default()
+                }
                 EntryPayload::Normal(IronRaftRequest::Set { key, value }) => {
-                    self.state_machine.lock().await.data.insert(key, value.clone());
+                    self.state_machine
+                        .lock()
+                        .await
+                        .data
+                        .insert(key, value.clone());
                     crate::raft::model::iron_raft_response::IronRaftResponse { value: Some(value) }
                 }
-                EntryPayload::Membership(_) => crate::raft::model::iron_raft_response::IronRaftResponse::default(),
+                EntryPayload::Membership(_) => {
+                    crate::raft::model::iron_raft_response::IronRaftResponse::default()
+                }
             };
 
             responses.push(response);
@@ -87,7 +106,9 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
     }
 
     // 开始接收新的快照。
-    async fn begin_receiving_snapshot(&mut self) -> Result<Box<Cursor<Vec<u8>>>, StorageError<u64>> {
+    async fn begin_receiving_snapshot(
+        &mut self,
+    ) -> Result<Box<Cursor<Vec<u8>>>, StorageError<u64>> {
         Ok(Box::new(Cursor::new(Vec::new())))
     }
 
@@ -98,9 +119,13 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
         snapshot: Box<Cursor<Vec<u8>>>,
     ) -> Result<(), StorageError<u64>> {
         let data = snapshot.into_inner();
-        let state_machine_data = serde_json::from_slice(&data).map_err(|error| StorageError::IO {
-            source: StorageIOError::read_snapshot(Some(meta.signature()), openraft::AnyError::new(&error)),
-        })?;
+        let state_machine_data =
+            serde_json::from_slice(&data).map_err(|error| StorageError::IO {
+                source: StorageIOError::read_snapshot(
+                    Some(meta.signature()),
+                    openraft::AnyError::new(&error),
+                ),
+            })?;
 
         *self.last_applied_log.lock().await = meta.last_log_id.clone();
         *self.last_membership.lock().await = meta.last_membership.clone();
@@ -116,11 +141,18 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
     }
 
     // 读取当前快照。
-    async fn get_current_snapshot(&mut self) -> Result<Option<Snapshot<IronRaftTypeConfig>>, StorageError<u64>> {
-        Ok(self.current_snapshot.lock().await.as_ref().map(|snapshot| Snapshot {
-            meta: snapshot.meta.clone(),
-            snapshot: Box::new(Cursor::new(snapshot.data.clone())),
-        }))
+    async fn get_current_snapshot(
+        &mut self,
+    ) -> Result<Option<Snapshot<IronRaftTypeConfig>>, StorageError<u64>> {
+        Ok(self
+            .current_snapshot
+            .lock()
+            .await
+            .as_ref()
+            .map(|snapshot| Snapshot {
+                meta: snapshot.meta.clone(),
+                snapshot: Box::new(Cursor::new(snapshot.data.clone())),
+            }))
     }
 }
 
@@ -140,7 +172,12 @@ impl RaftSnapshotBuilder<IronRaftTypeConfig> for IronRaftStateMachineStore {
         let last_membership = self.last_membership.lock().await.clone();
 
         let snapshot_id = match &last_applied_log {
-            Some(log_id) => format!("{}-{}-{}", log_id.committed_leader_id(), log_id.index, *snapshot_idx),
+            Some(log_id) => format!(
+                "{}-{}-{}",
+                log_id.committed_leader_id(),
+                log_id.index,
+                *snapshot_idx
+            ),
             None => format!("--{}", *snapshot_idx),
         };
 

@@ -13,26 +13,29 @@ use openraft::SnapshotMeta;
 use openraft::StoredMembership;
 use openraft::Vote;
 
+use crate::logging::peer_tag as peer_node_tag;
 use crate::raft::model::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::iron_raft_tcp_frame::IronRaftTcpFrame;
 use crate::raft::network::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
 use crate::raft::network::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
-use crate::logging::peer_tag as peer_node_tag;
 
 // IronMesh Raft TCP 服务端。
 #[derive(Clone)]
 pub struct IronRaftTcpServer {
     pub raft: Raft<IronRaftTypeConfig>, // Raft 节点句柄。
-    pub boot_node_ids: BTreeSet<u64>, // 需要参与投票的启动节点 ID。
+    pub boot_node_ids: BTreeSet<u64>,   // 需要参与投票的启动节点 ID。
 }
 
 // OpenRaft 标准协议相关实现。
 impl IronRaftTcpServer {
     // 创建 TCP 服务端。
     pub fn new(raft: Raft<IronRaftTypeConfig>, boot_node_ids: BTreeSet<u64>) -> Self {
-        Self { raft, boot_node_ids }
+        Self {
+            raft,
+            boot_node_ids,
+        }
     }
 
     // 启动 TCP 服务端并持续处理连接。
@@ -47,7 +50,8 @@ impl IronRaftTcpServer {
             let raft = self.raft.clone();
             let boot_node_ids = boot_node_ids.clone();
             tokio::spawn(async move {
-                if let Err(error) = Self::handle_connection(raft, boot_node_ids, &mut stream).await {
+                if let Err(error) = Self::handle_connection(raft, boot_node_ids, &mut stream).await
+                {
                     tracing::warn!(%peer_addr, %error, "[Iron] [cluster] 处理 Raft TCP 连接失败");
                 }
             });
@@ -102,15 +106,14 @@ impl IronRaftTcpServer {
                     node_name,
                     node_addr,
                 } => {
-                    let result =
-                        Self::handle_join_node(
-                            raft.clone(),
-                            boot_node_ids.clone(),
-                            node_id,
-                            node_name,
-                            node_addr,
-                        )
-                        .await;
+                    let result = Self::handle_join_node(
+                        raft.clone(),
+                        boot_node_ids.clone(),
+                        node_id,
+                        node_name,
+                        node_addr,
+                    )
+                    .await;
                     IronRaftTcpRpcResponse::JoinNode(result)
                 }
             };

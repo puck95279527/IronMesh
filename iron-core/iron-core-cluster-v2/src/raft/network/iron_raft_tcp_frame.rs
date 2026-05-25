@@ -22,16 +22,20 @@ impl IronRaftTcpFrame {
         let mut body = vec![0_u8; body_len];
         stream.read_exact(&mut body).await?;
 
-        serde_json::from_slice::<T>(&body).map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+        serde_json::from_slice::<T>(&body)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
     }
 
     // 向 TCP 连接写入一个 JSON 帧。
-    pub async fn write_json<T>(stream: &mut tokio::net::TcpStream, value: &T) -> Result<(), std::io::Error>
+    pub async fn write_json<T>(
+        stream: &mut tokio::net::TcpStream,
+        value: &T,
+    ) -> Result<(), std::io::Error>
     where
         T: Serialize,
     {
-        let body =
-            serde_json::to_vec(value).map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        let body = serde_json::to_vec(value)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
         let header = (body.len() as u32).to_be_bytes();
 
         stream.write_all(&header).await?;
