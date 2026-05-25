@@ -98,7 +98,7 @@ impl IronClusterHandle {
         };
         let metrics = self.raft.metrics().borrow().clone();
 
-        let (response, write_path, connection_state, leader_id, leader_addr) =
+        let (response, write_path, connection_state, leader_id) =
             if metrics.current_leader == Some(self.current_node.node_id) {
                 let response = self
                     .raft
@@ -110,7 +110,6 @@ impl IronClusterHandle {
                     "local_leader",
                     "not_used",
                     self.current_node.node_id,
-                    self.current_node.node_addr.clone(),
                 )
             } else {
                 let (leader_id, leader_addr) = Self::find_leader_node(&metrics)?;
@@ -137,18 +136,13 @@ impl IronClusterHandle {
                     "forward_to_leader",
                     connection_state,
                     leader_id,
-                    leader_addr,
                 )
             };
 
         tracing::debug!(
-            node_id = self.current_node.node_id,
-            node_name = %self.current_node.node_name,
-            node_addr = %self.current_node.node_addr,
             write_path,
             connection_state,
             leader_id,
-            leader_addr = %leader_addr,
             action,
             key = %key,
             value = %value,
