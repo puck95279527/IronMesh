@@ -5,7 +5,7 @@ use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 // IronMesh Raft 最小状态机数据模型。
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct IronRaftStateMachineData {
-    pub(crate) cluster_data: IronClusterData, // 状态机中保存的集群业务数据。
+    pub cluster_data: IronClusterData, // 状态机中保存的集群业务数据。
 }
 
 impl IronRaftStateMachineData {

@@ -35,7 +35,7 @@ impl IronRaftClusterManager {
         IronRaftClusterManagerFlow::validate_topology(&self)?;
 
         // 阶段 2：创建 Raft 实例、TCP 服务和本节点运行所需的基础对象。
-        let (raft, tcp_server, node_addr) =
+        let (raft, tcp_server, node_addr, state_machine_store) =
             IronRaftClusterManagerFlow::build_raft_runtime(&self).await?;
 
         // 阶段 3：启动长期运行的后台服务，让节点具备对外通信和调试查询能力。
@@ -58,6 +58,7 @@ impl IronRaftClusterManager {
         Ok(IronClusterHandle::new(
             self.current_node.clone(),
             raft,
+            state_machine_store,
             tasks,
         ))
     }

@@ -41,7 +41,7 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - 不要把业务逻辑放进 `iron-core` 或 `iron-common`。
 - 不要把具体协议 schema 放进 `iron-core`。
 - 不要让 `iron-common` 依赖业务、网关、核心网络或具体协议概念。
-- 所有测试代码、测试客户端、压测客户端、模拟器、mock 服务、验证工具优先放在 `iron-zenith-lab/*` 下。
+- 所有测试代码、测试客户端、压测客户端、模拟器、mock 服务、验证工具必须放在 `iron-zenith-lab/*` 下，不得放在生产 crate 源码目录中。
 - `iron-zenith-lab` 可以依赖网关、业务、核心、协议、公共能力，但不得反向被生产代码依赖。
 - `iron-zenith-lab` 中不得承载正式业务逻辑、核心网络框架逻辑或协议 schema 的唯一来源。
 

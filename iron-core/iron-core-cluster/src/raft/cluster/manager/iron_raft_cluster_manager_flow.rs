@@ -73,17 +73,26 @@ impl IronRaftClusterManagerFlow {
     // 阶段 2：创建当前节点的 Raft 实例和 TCP 服务对象。
     pub async fn build_raft_runtime(
         manager: &IronRaftClusterManager,
-    ) -> Result<(Raft<IronRaftTypeConfig>, IronRaftTcpServer, String), Box<dyn Error>> {
+    ) -> Result<
+        (
+            Raft<IronRaftTypeConfig>,
+            IronRaftTcpServer,
+            String,
+            IronRaftStateMachineStore,
+        ),
+        Box<dyn Error>,
+    > {
         let config = IronRaftClusterManagerSupport::build_raft_config()?;
         let node_id = manager.current_node.node_id;
         let node_name = manager.current_node.node_name.clone();
         let node_addr = manager.current_node.node_addr.clone();
+        let state_machine_store = IronRaftStateMachineStore::default();
         let raft = Raft::<IronRaftTypeConfig>::new(
             node_id,
             config,
             IronRaftNetworkFactory::default(),
             IronRaftLogStore::default(),
-            IronRaftStateMachineStore::default(),
+            state_machine_store.clone(),
         )
         .await?;
 
@@ -95,6 +104,7 @@ impl IronRaftClusterManagerFlow {
             raft.clone(),
             IronRaftTcpServer::new(raft, boot_node_ids),
             node_addr,
+            state_machine_store,
         ))
     }
 
