@@ -203,11 +203,21 @@ impl IronRaftTcpServer {
             .get_node(&node_id)
             .is_some()
         {
-            tracing::info!(%peer_tag, node_addr = %node_addr, "[Iron] [cluster] 节点已经在集群中");
+            tracing::info!(
+                %peer_tag,
+                node_addr = %node_addr,
+                join_source = "node_join_request",
+                "[Iron] [cluster] 节点已经在集群中，跳过重复加入"
+            );
             return Ok(());
         }
 
-        tracing::info!(%peer_tag, node_addr = %node_addr, "[Iron] [cluster] 开始加入节点到集群");
+        tracing::info!(
+            %peer_tag,
+            node_addr = %node_addr,
+            join_source = "node_join_request",
+            "[Iron] [cluster] leader 收到节点加入请求"
+        );
 
         raft.add_learner(node_id, openraft::BasicNode::new(node_addr.clone()), true)
             .await
@@ -219,7 +229,12 @@ impl IronRaftTcpServer {
                 .map_err(|error| error.to_string())?;
         }
 
-        tracing::info!(%peer_tag, node_addr = %node_addr, "[Iron] [cluster] 节点已加入集群");
+        tracing::info!(
+            %peer_tag,
+            node_addr = %node_addr,
+            join_source = "node_join_request",
+            "[Iron] [cluster] leader 已将节点加入集群"
+        );
         Ok(())
     }
 }

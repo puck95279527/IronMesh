@@ -129,7 +129,7 @@ impl IronRaftClusterManagerFlow {
                 continue;
             }
 
-            tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 未发现可加入的集群节点，准备争抢起盘资格");
+            tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 未发现已有集群，当前启动节点准备争抢起盘锁");
             let bootstrap_lock = match IronRaftClusterManagerSupport::try_acquire_bootstrap_lock()
                 .await
             {
@@ -141,7 +141,7 @@ impl IronRaftClusterManagerFlow {
                 }
             };
 
-            tracing::info!(%self_tag, "[Iron] [cluster] 已获得起盘资格");
+            tracing::info!(%self_tag, "[Iron] [cluster] 当前启动节点已获得起盘锁");
             let (joined_existing_cluster, saw_peer_after_lock) =
                 IronRaftClusterManagerSupport::try_join_existing_cluster(manager).await?;
             if joined_existing_cluster {
@@ -164,9 +164,9 @@ impl IronRaftClusterManagerFlow {
                 continue;
             }
 
-            tracing::info!(%self_tag, "[Iron] [cluster] 已完成最小集群初始化");
+            tracing::info!(%self_tag, "[Iron] [cluster] 最小 Raft 集群初始化完成");
             drop(bootstrap_lock);
-            tracing::info!(%self_tag, "[Iron] [cluster] 当前节点已成为起盘节点");
+            tracing::info!(%self_tag, "[Iron] [cluster] 当前节点已完成起盘");
             return Ok(true);
         }
     }
@@ -189,7 +189,12 @@ impl IronRaftClusterManagerFlow {
         }));
 
         IronRaftClusterManagerSupport::wait_until_leader(manager, raft).await?;
-        tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 开始逐个加入其他节点");
+        tracing::info!(
+            %self_tag,
+            %many_tag,
+            join_source = "leader_boot_scan",
+            "[Iron] [cluster] leader 开始检查 boot 节点加入状态"
+        );
         let mut did_progress = false;
         for (target_id, target_node) in manager.boot_nodes.iter() {
             if *target_id == manager.current_node.node_id {
@@ -209,11 +214,20 @@ impl IronRaftClusterManagerFlow {
         }
 
         if !did_progress {
-            tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 本轮没有可加入的节点，稍后重试");
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tracing::info!(
+                %self_tag,
+                %many_tag,
+                join_source = "leader_boot_scan",
+                "[Iron] [cluster] 本轮没有可加入的 boot 节点"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        tracing::info!(%self_tag, "[Iron] [cluster] 集群启动流程完成");
+        tracing::info!(
+            %self_tag,
+            join_source = "leader_boot_scan",
+            "[Iron] [cluster] 本轮 boot 节点加入检查完成"
+        );
         Ok(())
     }
 

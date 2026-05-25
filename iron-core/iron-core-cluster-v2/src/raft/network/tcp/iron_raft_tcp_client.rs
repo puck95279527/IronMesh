@@ -31,6 +31,9 @@ use crate::raft::network::tcp::iron_raft_tcp_frame::IronRaftTcpFrame;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
 
+// 节点加入 TCP RPC 超时时间。
+const JOIN_NODE_TIMEOUT: Duration = Duration::from_millis(500);
+
 // IronMesh Raft TCP 客户端。
 #[derive(Debug, Clone)]
 pub struct IronRaftTcpClient {
@@ -175,12 +178,7 @@ impl IronRaftTcpClient {
             node_addr,
         };
 
-        match tokio::time::timeout(
-            Duration::from_secs(2),
-            self.send_request_with_retry(request),
-        )
-        .await
-        {
+        match tokio::time::timeout(JOIN_NODE_TIMEOUT, self.send_request_with_retry(request)).await {
             Ok(result) => match result? {
                 IronRaftTcpRpcResponse::JoinNode(Ok(())) => Ok(()),
                 IronRaftTcpRpcResponse::JoinNode(Err(error)) => {

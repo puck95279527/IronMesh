@@ -25,6 +25,9 @@ use crate::raft::query::iron_raft_query::start_query_http_with_addr;
 // Bootstrap 争抢端口，用于保证同一时刻只会有一个节点负责起盘。
 const BOOTSTRAP_LOCK_ADDR: &str = "127.0.0.1:4999";
 
+// 节点 TCP 可达性探测超时时间。
+const PEER_REACHABLE_TIMEOUT: Duration = Duration::from_millis(100);
+
 // IronMesh Raft 集群管理辅助动作。
 pub struct IronRaftClusterManagerSupport;
 
@@ -178,6 +181,11 @@ impl IronRaftClusterManagerSupport {
             }
 
             let peer_tag = peer_node_tag(*peer_id, peer.node_name.as_str());
+            if !Self::is_peer_reachable(&peer.node_addr).await {
+                tracing::debug!(%self_tag, %peer_tag, "[Iron] [cluster] 已有节点 TCP 暂不可达，跳过本次加入探测");
+                continue;
+            }
+
             let client = IronRaftTcpClient {
                 target_node_id: *peer_id,
                 target_addr: peer.node_addr.clone(),
@@ -226,7 +234,7 @@ impl IronRaftClusterManagerSupport {
             manager.current_node.node_id,
             &manager.current_node.node_name,
         );
-        tracing::info!(%self_tag, "[Iron] [cluster] 正在初始化最小集群");
+        tracing::info!(%self_tag, "[Iron] [cluster] 开始初始化最小 Raft 集群");
         let init_members = BTreeMap::from([(
             manager.current_node.node_id,
             openraft::BasicNode::new(manager.current_node.node_addr.clone()),
@@ -246,7 +254,7 @@ impl IronRaftClusterManagerSupport {
             manager.current_node.node_id,
             &manager.current_node.node_name,
         );
-        tracing::info!(%self_tag, "[Iron] [cluster] 正在等待当前节点成为领导节点");
+        tracing::info!(%self_tag, "[Iron] [cluster] 正在等待当前节点成为领导节点(leader)");
         if let Err(error) = raft
             .wait(None)
             .state(ServerState::Leader, "等待 bootstrap 节点成为 Leader")
@@ -254,8 +262,20 @@ impl IronRaftClusterManagerSupport {
         {
             return Err(IoError::new(ErrorKind::Other, error.to_string()).into());
         }
-        tracing::info!(%self_tag, "[Iron] [cluster] 已确认当前节点成为领导节点");
+        tracing::info!(%self_tag, "[Iron] [cluster] 已确认当前节点成为领导节点(leader)");
         Ok(())
+    }
+
+    // 探测目标节点 TCP 地址是否可达。
+    pub async fn is_peer_reachable(node_addr: &str) -> bool {
+        matches!(
+            tokio::time::timeout(
+                PEER_REACHABLE_TIMEOUT,
+                tokio::net::TcpStream::connect(node_addr)
+            )
+            .await,
+            Ok(Ok(_))
+        )
     }
 
     // 将单个 boot 节点加入集群。
@@ -269,18 +289,15 @@ impl IronRaftClusterManagerSupport {
             manager.current_node.node_id,
             &manager.current_node.node_name,
         );
-        let target_tag = peer_node_tag(target_id, target_node.node_name.as_str());
-        let reachable = matches!(
-            tokio::time::timeout(
-                Duration::from_millis(200),
-                tokio::net::TcpStream::connect(&target_node.node_addr)
-            )
-            .await,
-            Ok(Ok(_))
-        );
+        let peer_tag = peer_node_tag(target_id, target_node.node_name.as_str());
 
-        if !reachable {
-            tracing::info!(%self_tag, %target_tag, "[Iron] [cluster] 目标节点暂不可达，稍后再试");
+        if !Self::is_peer_reachable(&target_node.node_addr).await {
+            tracing::info!(
+                %self_tag,
+                %peer_tag,
+                join_source = "leader_boot_scan",
+                "[Iron] [cluster] boot 节点暂不可达，本轮跳过"
+            );
             return Ok(false);
         }
 
@@ -293,7 +310,7 @@ impl IronRaftClusterManagerSupport {
             {
                 Ok(_) => break,
                 Err(error) => {
-                    tracing::warn!(%self_tag, %target_tag, %error, "[Iron] [cluster] 加入 learner 失败，稍后重试");
+                    tracing::warn!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 加入 learner 失败，稍后重试");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
@@ -309,13 +326,18 @@ impl IronRaftClusterManagerSupport {
             {
                 Ok(_) => break,
                 Err(error) => {
-                    tracing::warn!(%self_tag, %target_tag, %error, "[Iron] [cluster] 提升为 voter 失败，稍后重试");
+                    tracing::warn!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 提升为 voter 失败，稍后重试");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
         }
 
-        tracing::info!(%self_tag, %target_tag, "[Iron] [cluster] 节点已逐个加入集群");
+        tracing::info!(
+            %self_tag,
+            %peer_tag,
+            join_source = "leader_boot_scan",
+            "[Iron] [cluster] leader 已将节点加入集群"
+        );
         Ok(true)
     }
 
