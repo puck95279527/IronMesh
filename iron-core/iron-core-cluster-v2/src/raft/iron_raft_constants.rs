@@ -60,3 +60,6 @@ pub(crate) const LEARNER_CLEANUP_PROBE_TIMEOUT: Duration = Duration::from_millis
 
 // learner 清理任务连续失败确认次数。
 pub(crate) const LEARNER_CLEANUP_PROBE_COUNT: usize = 3;
+
+// voter 不可达日志节流间隔。
+pub(crate) const VOTER_UNREACHABLE_LOG_INTERVAL: Duration = Duration::from_secs(30);

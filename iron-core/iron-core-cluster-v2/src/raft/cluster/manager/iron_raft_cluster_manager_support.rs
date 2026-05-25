@@ -5,12 +5,13 @@ use std::error::Error;
 use std::fs;
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use openraft::ChangeMembers;
 use openraft::Config;
 use openraft::Raft;
 use openraft::ServerState;
+use tokio::task::JoinSet;
 use toml::Value;
 
 use crate::logging::{peer_tag as peer_node_tag, self_tag as self_node_tag};
@@ -26,18 +27,11 @@ use crate::raft::iron_raft_constants::PEER_REACHABLE_TIMEOUT;
 use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MAX;
 use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MIN;
 use crate::raft::iron_raft_constants::RAFT_HEARTBEAT_INTERVAL;
+use crate::raft::iron_raft_constants::VOTER_UNREACHABLE_LOG_INTERVAL;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::query::iron_raft_query::start_query_http_with_addr;
-
-// 节点 TCP 可达性探测超时时间。
-
-// learner 清理任务扫描间隔。
-
-// learner 清理任务单次 TCP 嗅探超时时间。
-
-// learner 清理任务连续失败确认次数。
 
 // IronMesh Raft 集群管理辅助动作。
 pub struct IronRaftClusterManagerSupport;
@@ -159,8 +153,12 @@ impl IronRaftClusterManagerSupport {
     }
 
     // 启动 Raft TCP 服务后台任务。
-    pub fn spawn_raft_tcp_server(tcp_server: IronRaftTcpServer, node_addr: String) {
-        tokio::spawn(async move {
+    pub fn spawn_raft_tcp_server(
+        tasks: &mut JoinSet<()>,
+        tcp_server: IronRaftTcpServer,
+        node_addr: String,
+    ) {
+        tasks.spawn(async move {
             if let Err(error) = tcp_server.serve(node_addr).await {
                 tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
             }
@@ -168,9 +166,10 @@ impl IronRaftClusterManagerSupport {
     }
 
     // 启动 leader 清理不可达 learner 节点的后台任务。
-    pub(crate) fn spawn_learner_cleanup(raft: Raft<IronRaftTypeConfig>) {
-        tokio::spawn(async move {
+    pub(crate) fn spawn_learner_cleanup(tasks: &mut JoinSet<()>, raft: Raft<IronRaftTypeConfig>) {
+        tasks.spawn(async move {
             let mut was_leader = false;
+            let mut voter_unreachable_log_times = BTreeMap::new();
 
             loop {
                 tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;
@@ -189,33 +188,24 @@ impl IronRaftClusterManagerSupport {
                     was_leader = true;
                 }
 
-                for (node_id, node_addr) in Self::collect_voter_nodes(&raft).await {
-                    if Self::confirm_voter_unreachable(node_id, &node_addr).await {
-                        tracing::info!(
-                            node_id,
-                            node_addr = %node_addr,
-                            "[Iron] [cluster] leader 确认投票节点(voter)不可达，保持集群成员关系不变"
-                        );
-                    }
-                }
-
-                for (node_id, node_addr) in Self::collect_learner_nodes(&raft).await {
-                    if Self::confirm_learner_unreachable(node_id, &node_addr).await {
-                        Self::remove_unreachable_learner(&raft, node_id, node_addr).await;
-                    }
-                }
+                Self::check_unreachable_voters(&raft, &mut voter_unreachable_log_times).await;
+                Self::check_unreachable_learners(&raft).await;
             }
         });
     }
 
     // 启动可选的调试 HTTP 查询服务后台任务。
-    pub fn spawn_debug_http(manager: &IronRaftClusterManager, raft: Raft<IronRaftTypeConfig>) {
+    pub fn spawn_debug_http(
+        tasks: &mut JoinSet<()>,
+        manager: &IronRaftClusterManager,
+        raft: Raft<IronRaftTypeConfig>,
+    ) {
         let node_id = manager.current_node.node_id;
         let node_name = manager.current_node.node_name.clone();
         let debug_http_addr = manager.current_node.http_debug_addr.clone();
 
         if let Some(http_debug_addr) = debug_http_addr {
-            tokio::spawn(async move {
+            tasks.spawn(async move {
                 if let Err(error) =
                     start_query_http_with_addr(node_id, node_name, http_debug_addr, raft).await
                 {
@@ -332,6 +322,78 @@ impl IronRaftClusterManagerSupport {
         )
     }
 
+    // 并发检查不可达的投票节点。
+    async fn check_unreachable_voters(
+        raft: &Raft<IronRaftTypeConfig>,
+        log_times: &mut BTreeMap<u64, Instant>,
+    ) {
+        let mut checks = JoinSet::new();
+        for (node_id, node_addr) in Self::collect_voter_nodes(raft).await {
+            checks.spawn(async move {
+                let unreachable = Self::confirm_voter_unreachable(&node_addr).await;
+                (node_id, node_addr, unreachable)
+            });
+        }
+
+        while let Some(result) = checks.join_next().await {
+            match result {
+                Ok((node_id, node_addr, true)) => {
+                    if Self::should_log_voter_unreachable(log_times, node_id) {
+                        tracing::info!(
+                            node_id,
+                            node_addr = %node_addr,
+                            "[Iron] [cluster] leader 确认投票节点(voter)不可达，保持集群成员关系不变"
+                        );
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "[Iron] [cluster] 投票节点(voter)探测任务失败");
+                }
+            }
+        }
+    }
+
+    // 并发检查不可达的 learner 节点，并串行执行移除。
+    async fn check_unreachable_learners(raft: &Raft<IronRaftTypeConfig>) {
+        let mut checks = JoinSet::new();
+        for (node_id, node_addr) in Self::collect_learner_nodes(raft).await {
+            checks.spawn(async move {
+                let unreachable = Self::confirm_learner_unreachable(node_id, &node_addr).await;
+                (node_id, node_addr, unreachable)
+            });
+        }
+
+        let mut unreachable_learners = Vec::new();
+        while let Some(result) = checks.join_next().await {
+            match result {
+                Ok((node_id, node_addr, true)) => unreachable_learners.push((node_id, node_addr)),
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "[Iron] [cluster] learner 节点探测任务失败");
+                }
+            }
+        }
+
+        for (node_id, node_addr) in unreachable_learners {
+            Self::remove_unreachable_learner(raft, node_id, node_addr).await;
+        }
+    }
+
+    // 判断 voter 不可达日志是否已经达到下一次允许记录的时间。
+    fn should_log_voter_unreachable(log_times: &mut BTreeMap<u64, Instant>, node_id: u64) -> bool {
+        let now = Instant::now();
+        match log_times.get(&node_id) {
+            Some(last_time) if now.duration_since(*last_time) < VOTER_UNREACHABLE_LOG_INTERVAL => {
+                false
+            }
+            _ => {
+                log_times.insert(node_id, now);
+                true
+            }
+        }
+    }
+
     // 收集当前 membership 中的 learner 节点。
     async fn collect_learner_nodes(raft: &Raft<IronRaftTypeConfig>) -> Vec<(u64, String)> {
         let metrics = raft.metrics().borrow().clone();
@@ -407,16 +469,10 @@ impl IronRaftClusterManagerSupport {
     }
 
     // 连续嗅探确认投票节点是否不可达。
-    async fn confirm_voter_unreachable(node_id: u64, node_addr: &str) -> bool {
+    async fn confirm_voter_unreachable(node_addr: &str) -> bool {
         if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
             return false;
         }
-
-        tracing::info!(
-            node_id,
-            node_addr = %node_addr,
-            "[Iron] [cluster] leader 发现投票节点(voter) TCP 不可达，开始确认"
-        );
 
         for _ in 1..LEARNER_CLEANUP_PROBE_COUNT {
             tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;

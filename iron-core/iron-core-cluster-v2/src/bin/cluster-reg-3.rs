@@ -14,5 +14,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         IronRaftNodeRole::Boot,
     ))?;
 
-    cluster_manager.run().await
+    cluster_manager.start().await?.wait_forever().await
 }

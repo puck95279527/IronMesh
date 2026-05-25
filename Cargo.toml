@@ -9,7 +9,6 @@ members = [
     "iron-core/iron-core-business",
     "iron-core/iron-core-cluster",
     "iron-core/iron-core-cluster-v2",
-#    "iron-core/iron-core-cluster-v2/openraft-examples/raft-kv-memstore",
     "iron-protocol/iron-scheme-libs/iron-scheme-business",
     "iron-protocol/iron-scheme-libs/iron-scheme-cluster",
 ]

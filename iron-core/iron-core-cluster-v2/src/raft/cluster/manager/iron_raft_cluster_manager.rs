@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 use crate::raft::cluster::iron_raft_node::IronRaftNode;
+use crate::raft::cluster::manager::iron_raft_cluster_handle::IronRaftClusterHandle;
 use crate::raft::cluster::manager::iron_raft_cluster_manager_flow::IronRaftClusterManagerFlow;
 use crate::raft::cluster::manager::iron_raft_cluster_manager_support::IronRaftClusterManagerSupport;
 
@@ -28,8 +29,8 @@ impl IronRaftClusterManager {
         })
     }
 
-    // 启动当前节点并运行起来。
-    pub async fn run(self) -> Result<(), Box<dyn Error>> {
+    // 启动当前节点，等待其完成起盘或加入集群后返回运行句柄。
+    pub async fn start(self) -> Result<IronRaftClusterHandle, Box<dyn Error>> {
         // 阶段 1：校验当前节点、注册节点表和唯一首次起盘节点。
         IronRaftClusterManagerFlow::validate_topology(&self)?;
 
@@ -38,7 +39,7 @@ impl IronRaftClusterManager {
             IronRaftClusterManagerFlow::build_raft_runtime(&self).await?;
 
         // 阶段 3：启动长期运行的后台服务，让节点具备对外通信和调试查询能力。
-        IronRaftClusterManagerFlow::spawn_runtime_services(
+        let tasks = IronRaftClusterManagerFlow::spawn_runtime_services(
             &self,
             raft.clone(),
             tcp_server,
@@ -54,8 +55,11 @@ impl IronRaftClusterManager {
             IronRaftClusterManagerFlow::join_remaining_boot_nodes(&self, &raft).await?;
         }
 
-        // 阶段 6：启动流程完成后保持进程运行，持续承载 Raft 服务。
-        IronRaftClusterManagerFlow::serve_forever().await;
-        Ok(())
+        Ok(IronRaftClusterHandle::new(raft, tasks))
+    }
+
+    // 启动当前节点并由调用方显式阻塞等待后台任务。
+    pub async fn run(self) -> Result<(), Box<dyn Error>> {
+        self.start().await?.wait_forever().await
     }
 }

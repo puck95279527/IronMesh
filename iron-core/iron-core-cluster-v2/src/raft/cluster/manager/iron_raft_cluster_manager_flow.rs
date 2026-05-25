@@ -3,6 +3,7 @@ use std::error::Error;
 use std::io::{Error as IoError, ErrorKind};
 
 use openraft::Raft;
+use tokio::task::JoinSet;
 
 use crate::logging::{many_tag as many_nodes_tag, self_tag as self_node_tag};
 use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
@@ -103,10 +104,12 @@ impl IronRaftClusterManagerFlow {
         raft: Raft<IronRaftTypeConfig>,
         tcp_server: IronRaftTcpServer,
         node_addr: String,
-    ) {
-        IronRaftClusterManagerSupport::spawn_raft_tcp_server(tcp_server, node_addr);
-        IronRaftClusterManagerSupport::spawn_learner_cleanup(raft.clone());
-        IronRaftClusterManagerSupport::spawn_debug_http(manager, raft);
+    ) -> JoinSet<()> {
+        let mut tasks = JoinSet::new();
+        IronRaftClusterManagerSupport::spawn_raft_tcp_server(&mut tasks, tcp_server, node_addr);
+        IronRaftClusterManagerSupport::spawn_learner_cleanup(&mut tasks, raft.clone());
+        IronRaftClusterManagerSupport::spawn_debug_http(&mut tasks, manager, raft);
+        tasks
     }
 
     // 阶段 4：先尝试加入已有集群；只有唯一起盘节点允许初始化新集群。
@@ -219,10 +222,5 @@ impl IronRaftClusterManagerFlow {
             "[Iron] [cluster] 本轮注册节点加入检查完成"
         );
         Ok(())
-    }
-
-    // 阶段 6：保持服务运行，直到进程退出。
-    pub async fn serve_forever() {
-        std::future::pending::<()>().await;
     }
 }
