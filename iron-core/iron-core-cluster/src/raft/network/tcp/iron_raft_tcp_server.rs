@@ -17,6 +17,7 @@ use tokio::sync::Semaphore;
 
 use crate::raft::iron_raft_constants::MAX_TCP_CONNECTIONS;
 use crate::raft::iron_raft_log_tag::peer_tag as peer_node_tag;
+use crate::raft::model::command::iron_raft_request::IronRaftRequest;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
@@ -122,11 +123,27 @@ impl IronRaftTcpServer {
                     IronRaftTcpRpcResponse::FullSnapshot(result)
                 }
                 IronRaftTcpRpcRequest::ClientWrite(request) => {
+                    let (action, key, value) = match &request {
+                        IronRaftRequest::ClusterData(command) => match command {
+                            crate::cluster_data::iron_cluster_data_command::IronClusterDataCommand::Set {
+                                key,
+                                value,
+                            } => ("set", key.clone(), value.clone()),
+                        },
+                    };
                     let result = raft
                         .client_write(request)
                         .await
                         .map(|response| response.data)
                         .map_err(|error| error.to_string());
+                    if result.is_ok() {
+                        tracing::debug!(
+                            action,
+                            key = %key,
+                            value = %value,
+                            "[Iron] [cluster-data] leader 收到并写入集群业务数据"
+                        );
+                    }
                     IronRaftTcpRpcResponse::ClientWrite(result)
                 }
                 IronRaftTcpRpcRequest::JoinNode {
