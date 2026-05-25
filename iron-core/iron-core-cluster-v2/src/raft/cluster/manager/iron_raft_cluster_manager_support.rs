@@ -50,7 +50,7 @@ impl IronRaftClusterManagerSupport {
         let content = fs::read_to_string(&config_path)?;
         let value: Value = toml::from_str(&content)?;
         let boot_nodes_value = value
-            .get("boot_nodes")
+            .get("IronRaftNode")
             .and_then(Value::as_array)
             .ok_or_else(|| {
                 IoError::new(
@@ -111,14 +111,19 @@ impl IronRaftClusterManagerSupport {
                 .get("http_debug_addr")
                 .and_then(Value::as_str)
                 .map(|value| value.to_string());
+            let is_boot_node = table
+                .get("is_boot_node")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
 
-            let node = IronRaftNode::new(
+            let mut node = IronRaftNode::new(
                 node_id as u64,
                 node_name,
                 node_addr,
                 http_debug_addr,
                 IronRaftNodeRole::Boot,
             );
+            node.is_boot_node = is_boot_node;
             if boot_nodes.insert(node.node_id, node).is_some() {
                 return Err(IoError::new(
                     ErrorKind::InvalidData,

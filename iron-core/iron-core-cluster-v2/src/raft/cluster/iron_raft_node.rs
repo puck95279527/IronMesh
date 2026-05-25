@@ -19,6 +19,8 @@ pub struct IronRaftNode {
     pub node_addr: String,
     // Raft 节点调试 HTTP 地址。
     pub http_debug_addr: Option<String>,
+    // Raft 节点是否为起盘节点。
+    pub is_boot_node: bool,
     // Raft 节点角色。
     pub node_role: IronRaftNodeRole,
 }
@@ -37,6 +39,7 @@ impl IronRaftNode {
             node_name: node_name.into(),
             node_addr: node_addr.into(),
             http_debug_addr,
+            is_boot_node: matches!(node_role, IronRaftNodeRole::Boot),
             node_role,
         }
     }
