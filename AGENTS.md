@@ -29,6 +29,7 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - `iron-protocol/iron-scheme-libs/build-support/`：FlatBuffers 生成脚本公共辅助代码。
 - `iron-protocol/tools/`：协议专属工具目录，例如固定版本的 `flatc`。
 - `iron-common/`：没有业务语义、没有网络语义的公共基础能力。
+- `iron-zenith-lab/`：IronMesh 测试与验证实验室父目录，用于集中放置测试代码、集成测试工程、端到端验证、压测客户端、模拟服务、测试数据生成器和测试辅助工具。
 
 ## 边界规则
 
@@ -40,6 +41,9 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - 不要把业务逻辑放进 `iron-core` 或 `iron-common`。
 - 不要把具体协议 schema 放进 `iron-core`。
 - 不要让 `iron-common` 依赖业务、网关、核心网络或具体协议概念。
+- 所有测试代码、测试客户端、压测客户端、模拟器、mock 服务、验证工具优先放在 `iron-zenith-lab/*` 下。
+- `iron-zenith-lab` 可以依赖网关、业务、核心、协议、公共能力，但不得反向被生产代码依赖。
+- `iron-zenith-lab` 中不得承载正式业务逻辑、核心网络框架逻辑或协议 schema 的唯一来源。
 
 ## 拆分原则
 
@@ -50,6 +54,9 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - 只有当目录已经是有效 crate，并拥有自己的 `Cargo.toml` 时，才加入 workspace members。
 - 框架代码应该能被网关和业务系统复用。
 - 协议需要随着系统增长进行版本化和分类管理。
+- `iron-zenith-lab/` 优先作为父目录组织测试与验证能力。
+- 当某个测试、压测、模拟或验证工具需要独立运行时，再拆成独立 crate。
+- `iron-zenith-lab` 下的子 crate 命名应保持 `iron-zenith-*` 或清晰表达用途，例如 `iron-zenith-load-client`、`iron-zenith-simulator`。
 
 ## Cargo Workspace 规范
 
@@ -59,6 +66,8 @@ IronMesh 是一个使用 Rust 构建的高性能分布式业务系统框架。
 - workspace 内部 crate 的路径必须优先声明在根目录 `[workspace.dependencies]` 中，子 crate 使用 `crate-name.workspace = true`。
 - `[workspace.dependencies]` 必须按类别分组，并使用中文注释标明类别，例如第三方依赖、workspace 内部 crate。
 - 只有当某个依赖确实需要在单个 crate 中使用不同版本或不同 feature 时，才允许在子 crate 单独声明，并在旁边写中文注释说明原因。
+- `iron-zenith-lab` 下的目录只有在成为有效 crate 且拥有自己的 `Cargo.toml` 后，才加入 workspace members。
+- 测试、压测、模拟类 crate 的依赖仍遵守根 workspace 统一依赖声明规则。
 
 ## 代码规格与注释规范
 
