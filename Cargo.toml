@@ -18,16 +18,33 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-# 第三方依赖。
+# Web 服务依赖。
 axum = "0.8"
-flatbuffers = "=25.12.19"
+
+# 异步运行时依赖。
+# 统一启用网络、任务、信号、时间和异步 IO 能力，避免子 crate 分散声明 tokio feature。
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+
+# 集群一致性依赖。
+# generic-snapshot-data 和 storage-v2 用于当前快照与存储接口，loosen-follower-log-revert 用于兼容当前 follower 日志回退策略。
 openraft = { version = "=0.9.24", features = ["generic-snapshot-data", "loosen-follower-log-revert", "serde", "storage-v2"] }
+
+# 协议与序列化依赖。
+# flatbuffers 固定版本需要和协议生成工具链保持一致，升级时必须同步检查生成代码。
+flatbuffers = "=25.12.19"
+# serde 统一启用 derive，避免各 crate 重复声明派生宏 feature。
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "2"
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+
+# 配置解析依赖。
 toml = "1.1.2"
+
+# 错误处理依赖。
+thiserror = "2"
+
+# 日志与可观测性依赖。
 tracing = "0.1"
+# env-filter 用于入口进程按环境过滤日志，fmt 用于统一文本日志输出。
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # workspace 内部 crate。
