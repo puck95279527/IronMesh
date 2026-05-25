@@ -55,7 +55,11 @@ impl IronRaftClusterManager {
             IronRaftClusterManagerFlow::join_remaining_boot_nodes(&self, &raft).await?;
         }
 
-        Ok(IronClusterHandle::new(self.current_node.clone(), raft, tasks))
+        Ok(IronClusterHandle::new(
+            self.current_node.clone(),
+            raft,
+            tasks,
+        ))
     }
 
     // 启动当前节点并由调用方显式阻塞等待后台任务。

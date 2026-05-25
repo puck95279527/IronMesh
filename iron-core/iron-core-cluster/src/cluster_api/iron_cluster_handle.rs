@@ -40,7 +40,10 @@ impl fmt::Display for IronClusterWriteError {
         match self {
             Self::NoLeader => write!(formatter, "当前集群暂时没有 leader"),
             Self::LeaderNodeMissing { leader_id } => {
-                write!(formatter, "当前集群缺少 leader 节点地址 leader_id={leader_id}")
+                write!(
+                    formatter,
+                    "当前集群缺少 leader 节点地址 leader_id={leader_id}"
+                )
             }
             Self::LocalWrite(error) => write!(formatter, "leader 本地写入失败: {error}"),
             Self::ForwardWrite(error) => write!(formatter, "转发 leader 写入失败: {error}"),
@@ -92,9 +95,7 @@ impl IronClusterHandle {
         command: IronClusterDataCommand,
     ) -> Result<IronRaftResponse, IronClusterWriteError> {
         let (action, key, value) = match &command {
-            IronClusterDataCommand::Set { key, value } => {
-                ("set", key.clone(), value.clone())
-            }
+            IronClusterDataCommand::Set { key, value } => ("set", key.clone(), value.clone()),
         };
         let metrics = self.raft.metrics().borrow().clone();
 
@@ -131,12 +132,7 @@ impl IronClusterHandle {
                         return Err(IronClusterWriteError::ForwardWrite(error));
                     }
                 };
-                (
-                    response,
-                    "forward_to_leader",
-                    connection_state,
-                    leader_id,
-                )
+                (response, "forward_to_leader", connection_state, leader_id)
             };
 
         tracing::debug!(

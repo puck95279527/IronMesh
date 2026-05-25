@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fs;
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use openraft::ChangeMembers;
 use openraft::Config;
@@ -19,14 +19,11 @@ use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
 use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_INITIALIZE_DELAY;
-use crate::raft::iron_raft_constants::LEARNER_CLEANUP_INTERVAL;
-use crate::raft::iron_raft_constants::LEARNER_CLEANUP_PROBE_COUNT;
-use crate::raft::iron_raft_constants::LEARNER_CLEANUP_PROBE_TIMEOUT;
+use crate::raft::iron_raft_constants::JOIN_LOCAL_READY_TIMEOUT;
 use crate::raft::iron_raft_constants::PEER_REACHABLE_TIMEOUT;
 use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MAX;
 use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MIN;
 use crate::raft::iron_raft_constants::RAFT_HEARTBEAT_INTERVAL;
-use crate::raft::iron_raft_constants::VOTER_UNREACHABLE_LOG_INTERVAL;
 use crate::raft::iron_raft_log_tag::{peer_tag as peer_node_tag, self_tag as self_node_tag};
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
@@ -165,35 +162,6 @@ impl IronRaftClusterManagerSupport {
         });
     }
 
-    // 启动 leader 清理不可达 learner 节点的后台任务。
-    pub(crate) fn spawn_learner_cleanup(tasks: &mut JoinSet<()>, raft: Raft<IronRaftTypeConfig>) {
-        tasks.spawn(async move {
-            let mut was_leader = false;
-            let mut voter_unreachable_log_times = BTreeMap::new();
-
-            loop {
-                tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;
-
-                let metrics = raft.metrics().borrow().clone();
-                if metrics.state != ServerState::Leader {
-                    was_leader = false;
-                    continue;
-                }
-
-                if !was_leader {
-                    tracing::info!(
-                        node_id = metrics.id,
-                        "[Iron] [cluster] 当前节点已成为领导节点(leader)，开始承担集群维护任务"
-                    );
-                    was_leader = true;
-                }
-
-                Self::check_unreachable_voters(&raft, &mut voter_unreachable_log_times).await;
-                Self::check_unreachable_learners(&raft).await;
-            }
-        });
-    }
-
     // 启动可选的调试 HTTP 查询服务后台任务。
     pub fn spawn_debug_http(
         tasks: &mut JoinSet<()>,
@@ -218,6 +186,7 @@ impl IronRaftClusterManagerSupport {
     // 遍历其他注册节点，尝试加入已有集群。
     pub async fn try_join_existing_cluster(
         manager: &IronRaftClusterManager,
+        raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(bool, bool), Box<dyn Error>> {
         let self_tag = self_node_tag(
             manager.current_node.node_id,
@@ -251,6 +220,15 @@ impl IronRaftClusterManagerSupport {
                 .await
             {
                 Ok(()) => {
+                    tracing::info!(%self_tag, %peer_tag, "[Iron] [cluster] leader 已接受当前节点加入请求，等待本地 Raft 状态就绪");
+                    if let Err(error) =
+                        Self::wait_until_local_joined_cluster(manager, raft, *peer_id).await
+                    {
+                        saw_peer = true;
+                        tracing::warn!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 本地 Raft 状态尚未就绪，稍后重试加入流程");
+                        continue;
+                    }
+
                     tracing::info!(%self_tag, %peer_tag, "[Iron] [cluster] 当前节点已加入已有集群");
                     return Ok((true, saw_peer));
                 }
@@ -266,6 +244,43 @@ impl IronRaftClusterManagerSupport {
         }
 
         Ok((false, saw_peer))
+    }
+
+    // 等待当前节点本地 Raft 状态确认已经完成集群加入。
+    pub async fn wait_until_local_joined_cluster(
+        manager: &IronRaftClusterManager,
+        raft: &Raft<IronRaftTypeConfig>,
+        leader_id: u64,
+    ) -> Result<(), Box<dyn Error>> {
+        let current_node_id = manager.current_node.node_id;
+        let self_tag = self_node_tag(
+            manager.current_node.node_id,
+            &manager.current_node.node_name,
+        );
+
+        let metrics = raft
+            .wait(Some(JOIN_LOCAL_READY_TIMEOUT))
+            .metrics(
+                move |metrics| {
+                    metrics.current_leader == Some(leader_id)
+                        && metrics
+                            .membership_config
+                            .membership()
+                            .get_node(&current_node_id)
+                            .is_some()
+                },
+                "等待本地节点感知 leader 并确认 membership",
+            )
+            .await
+            .map_err(|error| IoError::new(ErrorKind::TimedOut, error.to_string()))?;
+
+        tracing::info!(
+            %self_tag,
+            leader_id,
+            membership_log_id = ?metrics.membership_config.log_id(),
+            "[Iron] [cluster] 本地 Raft 状态已确认集群加入"
+        );
+        Ok(())
     }
 
     // 初始化只包含当前节点的最小 Raft 集群。
@@ -320,216 +335,6 @@ impl IronRaftClusterManagerSupport {
             tokio::time::timeout(timeout, tokio::net::TcpStream::connect(node_addr)).await,
             Ok(Ok(_))
         )
-    }
-
-    // 并发检查不可达的投票节点。
-    async fn check_unreachable_voters(
-        raft: &Raft<IronRaftTypeConfig>,
-        log_times: &mut BTreeMap<u64, Instant>,
-    ) {
-        let mut checks = JoinSet::new();
-        for (node_id, node_addr) in Self::collect_voter_nodes(raft).await {
-            checks.spawn(async move {
-                let unreachable = Self::confirm_voter_unreachable(&node_addr).await;
-                (node_id, node_addr, unreachable)
-            });
-        }
-
-        while let Some(result) = checks.join_next().await {
-            match result {
-                Ok((node_id, node_addr, true)) => {
-                    if Self::should_log_voter_unreachable(log_times, node_id) {
-                        tracing::info!(
-                            node_id,
-                            node_addr = %node_addr,
-                            "[Iron] [cluster] leader 确认投票节点(voter)不可达，保持集群成员关系不变"
-                        );
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    tracing::warn!(%error, "[Iron] [cluster] 投票节点(voter)探测任务失败");
-                }
-            }
-        }
-    }
-
-    // 并发检查不可达的 learner 节点，并串行执行移除。
-    async fn check_unreachable_learners(raft: &Raft<IronRaftTypeConfig>) {
-        let mut checks = JoinSet::new();
-        for (node_id, node_addr) in Self::collect_learner_nodes(raft).await {
-            checks.spawn(async move {
-                let unreachable = Self::confirm_learner_unreachable(node_id, &node_addr).await;
-                (node_id, node_addr, unreachable)
-            });
-        }
-
-        let mut unreachable_learners = Vec::new();
-        while let Some(result) = checks.join_next().await {
-            match result {
-                Ok((node_id, node_addr, true)) => unreachable_learners.push((node_id, node_addr)),
-                Ok(_) => {}
-                Err(error) => {
-                    tracing::warn!(%error, "[Iron] [cluster] learner 节点探测任务失败");
-                }
-            }
-        }
-
-        for (node_id, node_addr) in unreachable_learners {
-            Self::remove_unreachable_learner(raft, node_id, node_addr).await;
-        }
-    }
-
-    // 判断 voter 不可达日志是否已经达到下一次允许记录的时间。
-    fn should_log_voter_unreachable(log_times: &mut BTreeMap<u64, Instant>, node_id: u64) -> bool {
-        let now = Instant::now();
-        match log_times.get(&node_id) {
-            Some(last_time) if now.duration_since(*last_time) < VOTER_UNREACHABLE_LOG_INTERVAL => {
-                false
-            }
-            _ => {
-                log_times.insert(node_id, now);
-                true
-            }
-        }
-    }
-
-    // 收集当前 membership 中的 learner 节点。
-    async fn collect_learner_nodes(raft: &Raft<IronRaftTypeConfig>) -> Vec<(u64, String)> {
-        let metrics = raft.metrics().borrow().clone();
-        if metrics.state != ServerState::Leader {
-            return Vec::new();
-        }
-
-        let voter_ids = metrics
-            .membership_config
-            .membership()
-            .voter_ids()
-            .collect::<BTreeSet<_>>();
-
-        metrics
-            .membership_config
-            .nodes()
-            .filter_map(|(node_id, node)| {
-                if voter_ids.contains(node_id) {
-                    None
-                } else {
-                    Some((*node_id, node.addr.clone()))
-                }
-            })
-            .collect()
-    }
-
-    // 收集当前 membership 中除 leader 自身外的投票节点。
-    async fn collect_voter_nodes(raft: &Raft<IronRaftTypeConfig>) -> Vec<(u64, String)> {
-        let metrics = raft.metrics().borrow().clone();
-        if metrics.state != ServerState::Leader {
-            return Vec::new();
-        }
-
-        let self_node_id = metrics.id;
-        metrics
-            .membership_config
-            .membership()
-            .voter_ids()
-            .filter_map(|node_id| {
-                if node_id == self_node_id {
-                    None
-                } else {
-                    metrics
-                        .membership_config
-                        .membership()
-                        .get_node(&node_id)
-                        .map(|node| (node_id, node.addr.clone()))
-                }
-            })
-            .collect()
-    }
-
-    // 连续嗅探确认 learner 节点是否不可达。
-    async fn confirm_learner_unreachable(node_id: u64, node_addr: &str) -> bool {
-        if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
-            return false;
-        }
-
-        tracing::info!(
-            node_id,
-            node_addr = %node_addr,
-            "[Iron] [cluster] leader 发现 learner 节点 TCP 不可达，开始确认"
-        );
-
-        for _ in 1..LEARNER_CLEANUP_PROBE_COUNT {
-            tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;
-            if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    // 连续嗅探确认投票节点是否不可达。
-    async fn confirm_voter_unreachable(node_addr: &str) -> bool {
-        if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
-            return false;
-        }
-
-        for _ in 1..LEARNER_CLEANUP_PROBE_COUNT {
-            tokio::time::sleep(LEARNER_CLEANUP_INTERVAL).await;
-            if Self::is_tcp_reachable_with_timeout(node_addr, LEARNER_CLEANUP_PROBE_TIMEOUT).await {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    // 移除确认不可达的 learner 节点。
-    async fn remove_unreachable_learner(
-        raft: &Raft<IronRaftTypeConfig>,
-        node_id: u64,
-        node_addr: String,
-    ) {
-        let metrics = raft.metrics().borrow().clone();
-        if metrics.state != ServerState::Leader {
-            return;
-        }
-
-        let membership = metrics.membership_config.membership();
-        let voter_ids = membership.voter_ids().collect::<BTreeSet<_>>();
-        if voter_ids.contains(&node_id) {
-            tracing::info!(
-                node_id,
-                node_addr = %node_addr,
-                "[Iron] [cluster] 投票节点(voter)不允许自动移出，已跳过"
-            );
-            return;
-        }
-
-        if membership.get_node(&node_id).is_none() {
-            return;
-        }
-
-        match raft
-            .change_membership(ChangeMembers::RemoveNodes(BTreeSet::from([node_id])), true)
-            .await
-        {
-            Ok(_) => {
-                tracing::info!(
-                    node_id,
-                    node_addr = %node_addr,
-                    "[Iron] [cluster] leader 已将不可达 learner 节点移出集群"
-                );
-            }
-            Err(error) => {
-                tracing::warn!(
-                    node_id,
-                    node_addr = %node_addr,
-                    %error,
-                    "[Iron] [cluster] leader 移出不可达 learner 节点失败"
-                );
-            }
-        }
     }
 
     // 将单个注册节点加入集群。

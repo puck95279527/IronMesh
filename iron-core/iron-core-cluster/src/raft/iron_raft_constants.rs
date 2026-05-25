@@ -28,6 +28,9 @@ pub(crate) const BOOT_NODE_JOIN_EMPTY_ROUND_INTERVAL: Duration = Duration::from_
 // 注册节点加入为 learner 或 voter 失败后的重试间隔。
 pub(crate) const BOOT_NODE_JOIN_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
+// 节点加入 RPC 成功后等待本地 Raft 状态就绪的超时时间。
+pub(crate) const JOIN_LOCAL_READY_TIMEOUT: Duration = Duration::from_secs(5);
+
 // ==================== TCP 帧安全参数 ====================
 
 // TCP frame 最大 body 长度，超过后直接拒绝读取或写入。
@@ -49,17 +52,3 @@ pub(crate) const JOIN_NODE_TIMEOUT: Duration = Duration::from_millis(500);
 
 // 节点 TCP 可达性探测超时时间。
 pub(crate) const PEER_REACHABLE_TIMEOUT: Duration = Duration::from_millis(100);
-
-// ==================== 成员维护参数 ====================
-
-// learner 清理任务扫描间隔。
-pub(crate) const LEARNER_CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
-
-// learner 清理任务单次 TCP 嗅探超时时间。
-pub(crate) const LEARNER_CLEANUP_PROBE_TIMEOUT: Duration = Duration::from_millis(300);
-
-// learner 清理任务连续失败确认次数。
-pub(crate) const LEARNER_CLEANUP_PROBE_COUNT: usize = 3;
-
-// voter 不可达日志节流间隔。
-pub(crate) const VOTER_UNREACHABLE_LOG_INTERVAL: Duration = Duration::from_secs(30);

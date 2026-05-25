@@ -107,7 +107,6 @@ impl IronRaftClusterManagerFlow {
     ) -> JoinSet<()> {
         let mut tasks = JoinSet::new();
         IronRaftClusterManagerSupport::spawn_raft_tcp_server(&mut tasks, tcp_server, node_addr);
-        IronRaftClusterManagerSupport::spawn_learner_cleanup(&mut tasks, raft.clone());
         IronRaftClusterManagerSupport::spawn_debug_http(&mut tasks, manager, raft);
         tasks
     }
@@ -134,7 +133,7 @@ impl IronRaftClusterManagerFlow {
 
         loop {
             let (joined_existing_cluster, saw_peer) =
-                IronRaftClusterManagerSupport::try_join_existing_cluster(manager).await?;
+                IronRaftClusterManagerSupport::try_join_existing_cluster(manager, raft).await?;
             if joined_existing_cluster {
                 return Ok(false);
             }
