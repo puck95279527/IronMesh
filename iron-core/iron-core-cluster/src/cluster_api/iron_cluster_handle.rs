@@ -9,6 +9,8 @@ use tokio::task::JoinSet;
 
 use crate::cluster_data::iron_cluster_data_command::IronClusterDataCommand;
 use crate::raft::cluster::iron_raft_node::IronRaftNode;
+use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_INTERVAL;
+use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_LIMIT;
 use crate::raft::model::command::iron_raft_request::IronRaftRequest;
 use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
@@ -108,55 +110,88 @@ impl IronClusterHandle {
         let (action, key, value) = match &command {
             IronClusterDataCommand::Set { key, value } => ("set", key.clone(), value.clone()),
         };
-        let metrics = self.raft.metrics().borrow().clone();
+        let mut last_error = None;
 
-        let (response, write_path, connection_state, leader_id) =
-            if metrics.current_leader == Some(self.current_node.node_id) {
-                let response = self
+        for attempt in 1..=CLUSTER_WRITE_RETRY_LIMIT {
+            let command = command.clone();
+            let metrics = self.raft.metrics().borrow().clone();
+
+            let result = if metrics.current_leader == Some(self.current_node.node_id) {
+                match self
                     .raft
                     .client_write(IronRaftRequest::ClusterData(command))
                     .await
-                    .map_err(IronClusterWriteError::LocalWrite)?;
-                (
-                    response.data,
-                    "local_leader",
-                    "not_used",
-                    self.current_node.node_id,
-                )
-            } else {
-                let (leader_id, leader_addr) = Self::find_leader_node(&metrics)?;
-                let (client, connection_state) =
-                    self.leader_write_client(leader_id, &leader_addr).await;
-                let response = match client
-                    .client_write(IronRaftRequest::ClusterData(command))
-                    .await
                 {
-                    Ok(response) => response,
-                    Err(error) => {
-                        let mut guard = self.leader_write_client.lock().await;
-                        if guard.as_ref().is_some_and(|cached_client| {
-                            cached_client.target_node_id == leader_id
-                                && cached_client.target_addr == leader_addr
-                        }) {
-                            *guard = None;
+                    Ok(response) => Ok((
+                        response.data,
+                        "local_leader",
+                        "not_used",
+                        self.current_node.node_id,
+                    )),
+                    Err(error) => Err(IronClusterWriteError::LocalWrite(error)),
+                }
+            } else {
+                match Self::find_leader_node(&metrics) {
+                    Ok((leader_id, leader_addr)) => {
+                        let (client, connection_state) =
+                            self.leader_write_client(leader_id, &leader_addr).await;
+                        match client
+                            .client_write(IronRaftRequest::ClusterData(command))
+                            .await
+                        {
+                            Ok(response) => {
+                                Ok((response, "forward_to_leader", connection_state, leader_id))
+                            }
+                            Err(error) => {
+                                let mut guard = self.leader_write_client.lock().await;
+                                if guard.as_ref().is_some_and(|cached_client| {
+                                    cached_client.target_node_id == leader_id
+                                        && cached_client.target_addr == leader_addr
+                                }) {
+                                    *guard = None;
+                                }
+                                Err(IronClusterWriteError::ForwardWrite(error))
+                            }
                         }
-                        return Err(IronClusterWriteError::ForwardWrite(error));
                     }
-                };
-                (response, "forward_to_leader", connection_state, leader_id)
+                    Err(error) => Err(error),
+                }
             };
 
-        tracing::debug!(
-            write_path,
-            connection_state,
-            leader_id,
-            action,
-            key = %key,
-            value = %value,
-            "[Iron] [cluster-data] 集群业务数据写入成功"
-        );
+            match result {
+                Ok((response, write_path, connection_state, leader_id)) => {
+                    tracing::debug!(
+                        write_path,
+                        connection_state,
+                        leader_id,
+                        action,
+                        key = %key,
+                        value = %value,
+                        attempt,
+                        "[Iron] [cluster-data] 集群业务数据写入成功"
+                    );
 
-        Ok(response)
+                    return Ok(response);
+                }
+                Err(error) if attempt < CLUSTER_WRITE_RETRY_LIMIT => {
+                    tracing::warn!(
+                        action,
+                        key = %key,
+                        value = %value,
+                        attempt,
+                        %error,
+                        "[Iron] [cluster-data] 集群业务数据写入失败，准备重新读取 leader 后重试"
+                    );
+                    last_error = Some(error);
+                    tokio::time::sleep(CLUSTER_WRITE_RETRY_INTERVAL).await;
+                }
+                Err(error) => {
+                    last_error = Some(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(IronClusterWriteError::NoLeader))
     }
 
     // 获取当前 leader 的业务写入 TCP 客户端。

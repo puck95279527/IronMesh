@@ -40,6 +40,12 @@ pub(crate) const LEARNER_REMOVE_RETRY_LIMIT: usize = 3;
 // learner 断线后移出 membership 失败时的短暂重试间隔。
 pub(crate) const LEARNER_REMOVE_RETRY_INTERVAL: Duration = Duration::from_millis(200);
 
+// 集群业务写入遇到 leader 切换时的最大尝试次数。
+pub(crate) const CLUSTER_WRITE_RETRY_LIMIT: usize = 2;
+
+// 集群业务写入失败后重新读取 leader 的短暂重试间隔。
+pub(crate) const CLUSTER_WRITE_RETRY_INTERVAL: Duration = Duration::from_millis(100);
+
 // ==================== TCP 帧安全参数 ====================
 
 // TCP frame 最大 body 长度，超过后直接拒绝读取或写入。
