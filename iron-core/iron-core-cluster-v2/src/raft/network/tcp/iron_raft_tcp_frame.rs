@@ -3,6 +3,10 @@ use serde::de::DeserializeOwned;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
+use crate::raft::iron_raft_constants::MAX_FRAME_BODY_LEN;
+use crate::raft::iron_raft_constants::TCP_FRAME_READ_TIMEOUT;
+use crate::raft::iron_raft_constants::TCP_FRAME_WRITE_TIMEOUT;
+
 // IronMesh Raft TCP 帧编解码器。
 pub struct IronRaftTcpFrame;
 
@@ -16,11 +20,18 @@ impl IronRaftTcpFrame {
         T: DeserializeOwned,
     {
         let mut header = [0_u8; Self::HEADER_LEN];
-        stream.read_exact(&mut header).await?;
+        Self::read_exact_with_timeout(stream, &mut header).await?;
 
         let body_len = u32::from_be_bytes(header) as usize;
+        if body_len > MAX_FRAME_BODY_LEN {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("raft tcp frame body too large: {body_len}"),
+            ));
+        }
+
         let mut body = vec![0_u8; body_len];
-        stream.read_exact(&mut body).await?;
+        Self::read_exact_with_timeout(stream, &mut body).await?;
 
         serde_json::from_slice::<T>(&body)
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
@@ -36,11 +47,17 @@ impl IronRaftTcpFrame {
     {
         let body = serde_json::to_vec(value)
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-        let header = (body.len() as u32).to_be_bytes();
+        if body.len() > MAX_FRAME_BODY_LEN {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("raft tcp frame body too large: {}", body.len()),
+            ));
+        }
 
-        stream.write_all(&header).await?;
-        stream.write_all(&body).await?;
-        stream.flush().await?;
+        let header = (body.len() as u32).to_be_bytes();
+        Self::write_all_with_timeout(stream, &header).await?;
+        Self::write_all_with_timeout(stream, &body).await?;
+        Self::flush_with_timeout(stream).await?;
         Ok(())
     }
 
@@ -53,5 +70,47 @@ impl IronRaftTcpFrame {
                 | std::io::ErrorKind::ConnectionAborted
                 | std::io::ErrorKind::BrokenPipe
         )
+    }
+
+    // 在超时时间内读取指定长度的数据。
+    async fn read_exact_with_timeout(
+        stream: &mut tokio::net::TcpStream,
+        buffer: &mut [u8],
+    ) -> Result<(), std::io::Error> {
+        match tokio::time::timeout(TCP_FRAME_READ_TIMEOUT, stream.read_exact(buffer)).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(error)) => Err(error),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "raft tcp frame read timeout",
+            )),
+        }
+    }
+
+    // 在超时时间内写入指定数据。
+    async fn write_all_with_timeout(
+        stream: &mut tokio::net::TcpStream,
+        buffer: &[u8],
+    ) -> Result<(), std::io::Error> {
+        match tokio::time::timeout(TCP_FRAME_WRITE_TIMEOUT, stream.write_all(buffer)).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(error),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "raft tcp frame write timeout",
+            )),
+        }
+    }
+
+    // 在超时时间内刷新 TCP 写缓冲。
+    async fn flush_with_timeout(stream: &mut tokio::net::TcpStream) -> Result<(), std::io::Error> {
+        match tokio::time::timeout(TCP_FRAME_WRITE_TIMEOUT, stream.flush()).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(error),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "raft tcp frame flush timeout",
+            )),
+        }
     }
 }

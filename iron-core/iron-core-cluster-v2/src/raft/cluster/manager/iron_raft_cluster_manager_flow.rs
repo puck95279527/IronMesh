@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::io::{Error as IoError, ErrorKind};
-use std::time::Duration;
 
 use openraft::Raft;
 
@@ -9,6 +8,9 @@ use crate::logging::{many_tag as many_nodes_tag, self_tag as self_node_tag};
 use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
 use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
 use crate::raft::cluster::manager::iron_raft_cluster_manager_support::IronRaftClusterManagerSupport;
+use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_EMPTY_ROUND_INTERVAL;
+use crate::raft::iron_raft_constants::CLUSTER_STARTUP_ERROR_RETRY_INTERVAL;
+use crate::raft::iron_raft_constants::CLUSTER_STARTUP_RETRY_INTERVAL;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
@@ -140,7 +142,7 @@ impl IronRaftClusterManagerFlow {
                 } else {
                     tracing::info!(%self_tag, %many_tag, "[Iron] [cluster] 当前节点不是起盘节点，等待起盘节点完成集群初始化");
                 }
-                tokio::time::sleep(Duration::from_millis(800)).await;
+                tokio::time::sleep(CLUSTER_STARTUP_RETRY_INTERVAL).await;
                 continue;
             }
 
@@ -149,7 +151,7 @@ impl IronRaftClusterManagerFlow {
                 IronRaftClusterManagerSupport::initialize_minimal_cluster(manager, raft).await
             {
                 tracing::warn!(%self_tag, %error, "[Iron] [cluster] 初始化 Raft 集群失败");
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                tokio::time::sleep(CLUSTER_STARTUP_ERROR_RETRY_INTERVAL).await;
                 continue;
             }
 
@@ -208,7 +210,7 @@ impl IronRaftClusterManagerFlow {
                 join_source = "leader_boot_scan",
                 "[Iron] [cluster] 本轮没有可加入的注册节点"
             );
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(BOOT_NODE_JOIN_EMPTY_ROUND_INTERVAL).await;
         }
 
         tracing::info!(

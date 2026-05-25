@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use openraft::OptionalSend;
 use openraft::RaftNetwork;
@@ -23,6 +22,7 @@ use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
 use tokio::sync::Mutex;
 
+use crate::raft::iron_raft_constants::JOIN_NODE_TIMEOUT;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_request::IronRaftFullSnapshotRequest;
@@ -32,7 +32,6 @@ use crate::raft::network::tcp::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
 
 // 节点加入 TCP RPC 超时时间。
-const JOIN_NODE_TIMEOUT: Duration = Duration::from_millis(500);
 
 // IronMesh Raft TCP 客户端。
 #[derive(Debug, Clone)]

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use openraft::ChangeMembers;
 use openraft::CommittedLeaderId;
@@ -12,8 +13,10 @@ use openraft::Snapshot;
 use openraft::SnapshotMeta;
 use openraft::StoredMembership;
 use openraft::Vote;
+use tokio::sync::Semaphore;
 
 use crate::logging::peer_tag as peer_node_tag;
+use crate::raft::iron_raft_constants::MAX_TCP_CONNECTIONS;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
@@ -24,8 +27,10 @@ use crate::raft::network::tcp::iron_raft_tcp_rpc_response::IronRaftTcpRpcRespons
 // IronMesh Raft TCP 服务端。
 #[derive(Clone)]
 pub struct IronRaftTcpServer {
-    pub raft: Raft<IronRaftTypeConfig>, // Raft 节点句柄。
-    pub boot_node_ids: BTreeSet<u64>,   // 需要参与投票的启动节点 ID。
+    // Raft 节点句柄。
+    pub raft: Raft<IronRaftTypeConfig>,
+    // 需要参与投票的注册节点 ID。
+    pub boot_node_ids: BTreeSet<u64>,
 }
 
 // OpenRaft 标准协议相关实现。
@@ -43,13 +48,28 @@ impl IronRaftTcpServer {
         let addr = tcp_addr.parse::<SocketAddr>()?;
         let listener = tokio::net::TcpListener::bind(addr).await?;
         tracing::info!(%tcp_addr, "[Iron] [cluster] 启动 Raft TCP 服务");
+
         let boot_node_ids = self.boot_node_ids.clone();
+        let connection_limit = Arc::new(Semaphore::new(MAX_TCP_CONNECTIONS));
 
         loop {
             let (mut stream, peer_addr) = listener.accept().await?;
+            let connection_permit = match connection_limit.clone().try_acquire_owned() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    tracing::warn!(
+                        %peer_addr,
+                        max_connections = MAX_TCP_CONNECTIONS,
+                        "[Iron] [cluster] Raft TCP 连接数已达上限，拒绝新连接"
+                    );
+                    continue;
+                }
+            };
+
             let raft = self.raft.clone();
             let boot_node_ids = boot_node_ids.clone();
             tokio::spawn(async move {
+                let _connection_permit = connection_permit;
                 if let Err(error) = Self::handle_connection(raft, boot_node_ids, &mut stream).await
                 {
                     tracing::warn!(%peer_addr, %error, "[Iron] [cluster] 处理 Raft TCP 连接失败");

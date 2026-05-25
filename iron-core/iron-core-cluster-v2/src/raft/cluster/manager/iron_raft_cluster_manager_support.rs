@@ -17,22 +17,27 @@ use crate::logging::{peer_tag as peer_node_tag, self_tag as self_node_tag};
 use crate::raft::cluster::iron_raft_node::IronRaftNode;
 use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
 use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
+use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_INTERVAL;
+use crate::raft::iron_raft_constants::CLUSTER_INITIALIZE_DELAY;
+use crate::raft::iron_raft_constants::LEARNER_CLEANUP_INTERVAL;
+use crate::raft::iron_raft_constants::LEARNER_CLEANUP_PROBE_COUNT;
+use crate::raft::iron_raft_constants::LEARNER_CLEANUP_PROBE_TIMEOUT;
+use crate::raft::iron_raft_constants::PEER_REACHABLE_TIMEOUT;
+use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MAX;
+use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MIN;
+use crate::raft::iron_raft_constants::RAFT_HEARTBEAT_INTERVAL;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::query::iron_raft_query::start_query_http_with_addr;
 
 // 节点 TCP 可达性探测超时时间。
-const PEER_REACHABLE_TIMEOUT: Duration = Duration::from_millis(100);
 
 // learner 清理任务扫描间隔。
-const LEARNER_CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
 
 // learner 清理任务单次 TCP 嗅探超时时间。
-const LEARNER_CLEANUP_PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 
 // learner 清理任务连续失败确认次数。
-const LEARNER_CLEANUP_PROBE_COUNT: usize = 3;
 
 // IronMesh Raft 集群管理辅助动作。
 pub struct IronRaftClusterManagerSupport;
@@ -144,9 +149,9 @@ impl IronRaftClusterManagerSupport {
     pub fn build_raft_config() -> Result<Arc<Config>, Box<dyn Error>> {
         Ok(Arc::new(
             Config {
-                heartbeat_interval: 500,
-                election_timeout_min: 1500,
-                election_timeout_max: 3000,
+                heartbeat_interval: RAFT_HEARTBEAT_INTERVAL,
+                election_timeout_min: RAFT_ELECTION_TIMEOUT_MIN,
+                election_timeout_max: RAFT_ELECTION_TIMEOUT_MAX,
                 ..Default::default()
             }
             .validate()?,
@@ -288,7 +293,7 @@ impl IronRaftClusterManagerSupport {
             openraft::BasicNode::new(manager.current_node.node_addr.clone()),
         )]);
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(CLUSTER_INITIALIZE_DELAY).await;
         raft.initialize(init_members).await?;
         Ok(())
     }
@@ -504,7 +509,7 @@ impl IronRaftClusterManagerSupport {
                 Ok(_) => break,
                 Err(error) => {
                     tracing::warn!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 加入 learner 失败，稍后重试");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    tokio::time::sleep(BOOT_NODE_JOIN_RETRY_INTERVAL).await;
                 }
             }
         }
@@ -520,7 +525,7 @@ impl IronRaftClusterManagerSupport {
                 Ok(_) => break,
                 Err(error) => {
                     tracing::warn!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 提升为 voter 失败，稍后重试");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    tokio::time::sleep(BOOT_NODE_JOIN_RETRY_INTERVAL).await;
                 }
             }
         }
