@@ -20,7 +20,8 @@ impl IronRaftTcpFrame {
         T: DeserializeOwned,
     {
         let mut header = [0_u8; Self::HEADER_LEN];
-        Self::read_exact_with_timeout(stream, &mut header).await?;
+        // 等待下一帧头时不设置空闲超时，让集群内部长连接可以持续复用。
+        stream.read_exact(&mut header).await?;
 
         let body_len = u32::from_be_bytes(header) as usize;
         if body_len > MAX_FRAME_BODY_LEN {

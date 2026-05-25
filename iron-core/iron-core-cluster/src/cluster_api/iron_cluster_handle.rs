@@ -65,6 +65,8 @@ pub struct IronClusterHandle {
     current_node: IronRaftNode,
     // Raft 节点句柄，仅供 crate 内部连接底层 Raft 运行时。
     pub(crate) raft: Raft<IronRaftTypeConfig>,
+    // 当前节点到 leader 的业务写入 TCP 客户端缓存。
+    leader_write_client: Arc<tokio::sync::Mutex<Option<IronRaftTcpClient>>>,
     // 当前集群节点托管的后台任务集合。
     tasks: JoinSet<()>,
 }
@@ -79,6 +81,7 @@ impl IronClusterHandle {
         Self {
             current_node,
             raft,
+            leader_write_client: Arc::new(tokio::sync::Mutex::new(None)),
             tasks,
         }
     }
@@ -95,7 +98,7 @@ impl IronClusterHandle {
         };
         let metrics = self.raft.metrics().borrow().clone();
 
-        let (response, write_path, leader_id, leader_addr) =
+        let (response, write_path, connection_state, leader_id, leader_addr) =
             if metrics.current_leader == Some(self.current_node.node_id) {
                 let response = self
                     .raft
@@ -105,21 +108,37 @@ impl IronClusterHandle {
                 (
                     response.data,
                     "local_leader",
+                    "not_used",
                     self.current_node.node_id,
                     self.current_node.node_addr.clone(),
                 )
             } else {
                 let (leader_id, leader_addr) = Self::find_leader_node(&metrics)?;
-                let client = IronRaftTcpClient {
-                    target_node_id: leader_id,
-                    target_addr: leader_addr.clone(),
-                    cached_stream: Arc::new(tokio::sync::Mutex::new(None)),
-                };
-                let response = client
+                let (client, connection_state) =
+                    self.leader_write_client(leader_id, &leader_addr).await;
+                let response = match client
                     .client_write(IronRaftRequest::ClusterData(command))
                     .await
-                    .map_err(IronClusterWriteError::ForwardWrite)?;
-                (response, "forward_to_leader", leader_id, leader_addr)
+                {
+                    Ok(response) => response,
+                    Err(error) => {
+                        let mut guard = self.leader_write_client.lock().await;
+                        if guard.as_ref().is_some_and(|cached_client| {
+                            cached_client.target_node_id == leader_id
+                                && cached_client.target_addr == leader_addr
+                        }) {
+                            *guard = None;
+                        }
+                        return Err(IronClusterWriteError::ForwardWrite(error));
+                    }
+                };
+                (
+                    response,
+                    "forward_to_leader",
+                    connection_state,
+                    leader_id,
+                    leader_addr,
+                )
             };
 
         tracing::debug!(
@@ -127,6 +146,7 @@ impl IronClusterHandle {
             node_name = %self.current_node.node_name,
             node_addr = %self.current_node.node_addr,
             write_path,
+            connection_state,
             leader_id,
             leader_addr = %leader_addr,
             action,
@@ -136,6 +156,32 @@ impl IronClusterHandle {
         );
 
         Ok(response)
+    }
+
+    // 获取当前 leader 的业务写入 TCP 客户端。
+    async fn leader_write_client(
+        &self,
+        leader_id: u64,
+        leader_addr: &str,
+    ) -> (IronRaftTcpClient, &'static str) {
+        let mut guard = self.leader_write_client.lock().await;
+        match guard.as_ref() {
+            Some(client)
+                if client.target_node_id == leader_id && client.target_addr == leader_addr =>
+            {
+                (client.clone(), "cached")
+            }
+            _ => {
+                let connection_state = if guard.is_some() { "replaced" } else { "new" };
+                let client = IronRaftTcpClient {
+                    target_node_id: leader_id,
+                    target_addr: leader_addr.to_string(),
+                    cached_stream: Arc::new(tokio::sync::Mutex::new(None)),
+                };
+                *guard = Some(client.clone());
+                (client, connection_state)
+            }
+        }
     }
 
     // 从 Raft 指标中查找当前 leader 节点。
