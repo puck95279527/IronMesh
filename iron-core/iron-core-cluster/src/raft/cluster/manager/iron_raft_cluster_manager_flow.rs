@@ -5,13 +5,13 @@ use std::io::{Error as IoError, ErrorKind};
 use openraft::Raft;
 use tokio::task::JoinSet;
 
-use crate::logging::{many_tag as many_nodes_tag, self_tag as self_node_tag};
 use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
 use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
 use crate::raft::cluster::manager::iron_raft_cluster_manager_support::IronRaftClusterManagerSupport;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_EMPTY_ROUND_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_STARTUP_ERROR_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_STARTUP_RETRY_INTERVAL;
+use crate::raft::iron_raft_log_tag::{many_tag as many_nodes_tag, self_tag as self_node_tag};
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;

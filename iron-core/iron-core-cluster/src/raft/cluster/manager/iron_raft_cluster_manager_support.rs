@@ -14,7 +14,6 @@ use openraft::ServerState;
 use tokio::task::JoinSet;
 use toml::Value;
 
-use crate::logging::{peer_tag as peer_node_tag, self_tag as self_node_tag};
 use crate::raft::cluster::iron_raft_node::IronRaftNode;
 use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
 use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
@@ -28,6 +27,7 @@ use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MAX;
 use crate::raft::iron_raft_constants::RAFT_ELECTION_TIMEOUT_MIN;
 use crate::raft::iron_raft_constants::RAFT_HEARTBEAT_INTERVAL;
 use crate::raft::iron_raft_constants::VOTER_UNREACHABLE_LOG_INTERVAL;
+use crate::raft::iron_raft_log_tag::{peer_tag as peer_node_tag, self_tag as self_node_tag};
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;

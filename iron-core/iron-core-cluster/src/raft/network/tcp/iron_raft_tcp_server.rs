@@ -15,8 +15,8 @@ use openraft::StoredMembership;
 use openraft::Vote;
 use tokio::sync::Semaphore;
 
-use crate::logging::peer_tag as peer_node_tag;
 use crate::raft::iron_raft_constants::MAX_TCP_CONNECTIONS;
+use crate::raft::iron_raft_log_tag::peer_tag as peer_node_tag;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
