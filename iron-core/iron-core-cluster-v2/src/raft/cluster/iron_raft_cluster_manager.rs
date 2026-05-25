@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::env;
 use std::error::Error;
+use std::fs;
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,10 +11,12 @@ use openraft::ChangeMembers;
 use openraft::Config;
 use openraft::Raft;
 use openraft::ServerState;
+use toml::Value;
 
 use crate::http::iron_raft_query::start_query_http_with_addr;
 use crate::logging::{many_tag as many_nodes_tag, peer_tag as peer_node_tag, self_tag as self_node_tag};
 use crate::raft::cluster::iron_raft_node::IronRaftNode;
+use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
 use crate::raft::core::iron_raft_log_store::IronRaftLogStore;
 use crate::raft::core::iron_raft_state_machine_store::IronRaftStateMachineStore;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
@@ -33,12 +37,98 @@ pub struct IronRaftClusterManager {
 }
 
 impl IronRaftClusterManager {
-    // 创建 Raft 集群管理器。
-    pub fn new(current_node: IronRaftNode, boot_nodes: BTreeMap<u64, IronRaftNode>) -> Self {
-        Self {
+    // 创建 Raft 集群管理器，并从配置文件加载启动节点。
+    pub fn new(current_node: IronRaftNode) -> Result<Self, Box<dyn Error>> {
+        let boot_nodes = Self::load_cluster_boot()?;
+        Ok(Self {
             current_node,
             boot_nodes,
+        })
+    }
+
+    // 从 `cluster-boot.toml` 读取启动节点表。
+    fn load_cluster_boot() -> Result<BTreeMap<u64, IronRaftNode>, Box<dyn Error>> {
+        let config_path = env::current_exe()?
+            .parent()
+            .ok_or_else(|| IoError::new(ErrorKind::NotFound, "无法找到当前可执行文件目录"))?
+            .join("cluster-boot.toml");
+        let content = fs::read_to_string(&config_path)?;
+        let value: Value = toml::from_str(&content)?;
+        let boot_nodes_value = value
+            .get("boot_nodes")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                IoError::new(
+                    ErrorKind::InvalidData,
+                    format!("{} 缺少 boot_nodes 数组", config_path.display()),
+                )
+            })?;
+
+        let mut boot_nodes = BTreeMap::new();
+        for item in boot_nodes_value {
+            let table = item.as_table().ok_or_else(|| {
+                IoError::new(
+                    ErrorKind::InvalidData,
+                    format!("{} 中的 boot_nodes 条目必须是表", config_path.display()),
+                )
+            })?;
+
+            let node_id = table
+                .get("node_id")
+                .and_then(Value::as_integer)
+                .ok_or_else(|| {
+                    IoError::new(
+                        ErrorKind::InvalidData,
+                        format!("{} 中的 boot_nodes 条目缺少 node_id", config_path.display()),
+                    )
+                })?;
+            if node_id < 0 {
+                return Err(IoError::new(ErrorKind::InvalidData, "boot 节点 node_id 不能为负数").into());
+            }
+
+            let node_name = table
+                .get("node_name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    IoError::new(
+                        ErrorKind::InvalidData,
+                        format!("{} 中的 boot_nodes 条目缺少 node_name", config_path.display()),
+                    )
+                })?;
+            let node_addr = table
+                .get("node_addr")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    IoError::new(
+                        ErrorKind::InvalidData,
+                        format!("{} 中的 boot_nodes 条目缺少 node_addr", config_path.display()),
+                    )
+                })?;
+            let http_debug_addr = table
+                .get("http_debug_addr")
+                .and_then(Value::as_str)
+                .map(|value| value.to_string());
+
+            let node = IronRaftNode::new(
+                node_id as u64,
+                node_name,
+                node_addr,
+                http_debug_addr,
+                IronRaftNodeRole::Boot,
+            );
+            if boot_nodes.insert(node.node_id, node).is_some() {
+                return Err(
+                    IoError::new(ErrorKind::InvalidData, "cluster-boot.toml 中存在重复的 node_id")
+                        .into(),
+                );
+            }
         }
+
+        if boot_nodes.is_empty() {
+            return Err(IoError::new(ErrorKind::InvalidData, "cluster-boot.toml 不能为空").into());
+        }
+
+        Ok(boot_nodes)
     }
 
     // 启动当前节点并运行起来。
