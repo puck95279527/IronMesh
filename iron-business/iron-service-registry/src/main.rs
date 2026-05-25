@@ -1,4 +1,4 @@
 // 启动 IronMesh 注册中心服务。
-fn main() -> Result<(), iron_core_cluster::ClusterError> {
-    iron_core_cluster::run_registry_cluster_from_local_toml()
+fn main() {
+    println!("IronMesh 注册中心服务壳已启动，集群运行入口已迁移到 iron-core-cluster。");
 }

@@ -7,8 +7,3 @@ edition.workspace = true
 name = "iron-service-ddz"
 path = "src/main.rs"
 
-[dependencies]
-iron-core-cluster.workspace = true
-
-[build-dependencies]
-iron-core-cluster.workspace = true

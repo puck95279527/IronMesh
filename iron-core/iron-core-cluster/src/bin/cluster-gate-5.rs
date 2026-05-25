@@ -1,9 +1,9 @@
 // 启动网关 Raft 节点。
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use iron_core_cluster_v2::logging::init_cluster_logging;
-    use iron_core_cluster_v2::raft::cluster::iron_raft_node::{IronRaftNode, IronRaftNodeRole};
-    use iron_core_cluster_v2::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
+    use iron_core_cluster::logging::init_cluster_logging;
+    use iron_core_cluster::raft::cluster::iron_raft_node::{IronRaftNode, IronRaftNodeRole};
+    use iron_core_cluster::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
 
     init_cluster_logging();
     let cluster_manager = IronRaftClusterManager::new(IronRaftNode::new(
