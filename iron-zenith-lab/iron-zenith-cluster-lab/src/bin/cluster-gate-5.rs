@@ -30,18 +30,12 @@ fn spawn_local_cluster_data_size_logger(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use iron_core_cluster::raft::cluster::iron_raft_node::{IronRaftNode, IronRaftNodeRole};
     use iron_core_cluster::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
     use support::cluster_data_writer::write_current_node_cluster_data;
     use support::cluster_logging::init_cluster_process_logging;
 
     init_cluster_process_logging()?;
-    let cluster_manager = IronRaftClusterManager::new(IronRaftNode::new(
-        5,
-        "127.0.0.1:5005",
-        Some("127.0.0.1:7105".to_string()),
-        IronRaftNodeRole::Learner,
-    ))?;
+    let cluster_manager = IronRaftClusterManager::add_learner(5, "127.0.0.1:5005")?;
 
     let cluster_handle = Arc::new(cluster_manager.start().await?);
     spawn_local_cluster_data_size_logger(cluster_handle.clone());

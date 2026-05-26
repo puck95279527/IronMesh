@@ -25,7 +25,7 @@ pub struct IronRaftNode {
 
 impl IronRaftNode {
     // 创建 Raft 节点配置。
-    pub fn new(
+    pub(crate) fn new(
         node_id: u64,
         node_addr: impl Into<String>,
         http_debug_addr: Option<String>,

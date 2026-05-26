@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::io::{Error as IoError, ErrorKind};
 
 use crate::cluster_api::iron_cluster_handle::IronClusterHandle;
-use crate::raft::cluster::iron_raft_node::IronRaftNode;
+use crate::raft::cluster::iron_raft_node::{IronRaftNode, IronRaftNodeRole};
 use crate::raft::cluster::manager::iron_raft_cluster_manager_flow::IronRaftClusterManagerFlow;
 use crate::raft::cluster::manager::iron_raft_cluster_manager_support::IronRaftClusterManagerSupport;
 
@@ -16,15 +17,35 @@ pub struct IronRaftClusterManager {
 }
 
 impl IronRaftClusterManager {
-    // 创建 Raft 集群管理器，并从配置文件加载注册节点表。
-    pub fn new(mut current_node: IronRaftNode) -> Result<Self, Box<dyn Error>> {
+    // 创建 voter Raft 集群管理器，并从注册节点表按节点 ID 选择当前节点。
+    pub fn add_voter(node_id: u64) -> Result<Self, Box<dyn Error>> {
         let boot_nodes = IronRaftClusterManagerSupport::load_cluster_boot()?;
-        if let Some(config_node) = boot_nodes.get(&current_node.node_id) {
-            current_node.is_boot_node = config_node.is_boot_node;
-        }
+        let current_node = boot_nodes.get(&node_id).cloned().ok_or_else(|| {
+            IoError::new(
+                ErrorKind::InvalidInput,
+                format!("Raft voter 节点必须存在于 cluster-boot.toml: node_id={node_id}"),
+            )
+        })?;
 
         Ok(Self {
             current_node,
+            boot_nodes,
+        })
+    }
+
+    // 创建 learner Raft 集群管理器，并从配置文件加载注册节点表。
+    pub fn add_learner(node_id: u64, node_addr: impl Into<String>) -> Result<Self, Box<dyn Error>> {
+        let boot_nodes = IronRaftClusterManagerSupport::load_cluster_boot()?;
+        if boot_nodes.contains_key(&node_id) {
+            return Err(IoError::new(
+                ErrorKind::InvalidInput,
+                format!("Raft learner 节点不能配置在注册节点表中: node_id={node_id}"),
+            )
+            .into());
+        }
+
+        Ok(Self {
+            current_node: IronRaftNode::new(node_id, node_addr, None, IronRaftNodeRole::Learner),
             boot_nodes,
         })
     }
