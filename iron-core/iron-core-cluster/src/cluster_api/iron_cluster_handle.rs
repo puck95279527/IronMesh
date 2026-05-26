@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt;
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::Arc;
 
@@ -7,6 +6,7 @@ use openraft::Raft;
 use openraft::RaftMetrics;
 use tokio::task::JoinSet;
 
+use crate::cluster_api::iron_cluster_write_error::IronClusterWriteError;
 use crate::cluster_data::iron_cluster_data_command::IronClusterDataCommand;
 use crate::raft::cluster::iron_raft_node::IronRaftNode;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_INTERVAL;
@@ -17,54 +17,6 @@ use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::state_machine::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineStore;
-
-// IronMesh 集群写入错误。
-#[derive(Debug)]
-pub enum IronClusterWriteError {
-    // 当前集群暂时没有 leader。
-    NoLeader,
-    // 当前节点知道 leader 标识，但成员关系中缺少 leader 节点地址。
-    LeaderNodeMissing {
-        leader_id: u64, // 缺少地址的 leader 节点标识。
-    },
-    // leader 本地写入失败。
-    LocalWrite(
-        openraft::error::RaftError<
-            u64,
-            openraft::error::ClientWriteError<u64, openraft::BasicNode>,
-        >,
-    ),
-    // 非 leader 向 leader 转发写入失败。
-    ForwardWrite(std::io::Error),
-}
-
-impl fmt::Display for IronClusterWriteError {
-    // 格式化集群写入错误。
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoLeader => write!(formatter, "当前集群暂时没有 leader"),
-            Self::LeaderNodeMissing { leader_id } => {
-                write!(
-                    formatter,
-                    "当前集群缺少 leader 节点地址 leader_id={leader_id}"
-                )
-            }
-            Self::LocalWrite(error) => write!(formatter, "leader 本地写入失败: {error}"),
-            Self::ForwardWrite(error) => write!(formatter, "转发 leader 写入失败: {error}"),
-        }
-    }
-}
-
-impl Error for IronClusterWriteError {
-    // 返回底层错误来源。
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::LocalWrite(error) => Some(error),
-            Self::ForwardWrite(error) => Some(error),
-            _ => None,
-        }
-    }
-}
 
 // IronMesh 集群运行句柄。
 pub struct IronClusterHandle {
@@ -143,6 +95,8 @@ impl IronClusterHandle {
                                 Ok((response, "forward_to_leader", connection_state, leader_id))
                             }
                             Err(error) => {
+                                let error_kind = error.kind();
+                                let error_message = error.to_string();
                                 let mut guard = self.leader_write_client.lock().await;
                                 if guard.as_ref().is_some_and(|cached_client| {
                                     cached_client.target_node_id == leader_id
@@ -150,7 +104,34 @@ impl IronClusterHandle {
                                 }) {
                                     *guard = None;
                                 }
-                                Err(IronClusterWriteError::ForwardWrite(error))
+                                match error_kind {
+                                    ErrorKind::TimedOut => {
+                                        Err(IronClusterWriteError::ForwardWriteTimeout {
+                                            leader_id,
+                                            leader_addr,
+                                            message: error_message,
+                                        })
+                                    }
+                                    ErrorKind::InvalidData => {
+                                        Err(IronClusterWriteError::ForwardWriteProtocol {
+                                            leader_id,
+                                            leader_addr,
+                                            message: error_message,
+                                        })
+                                    }
+                                    ErrorKind::Other => {
+                                        Err(IronClusterWriteError::ForwardWriteRejected {
+                                            leader_id,
+                                            leader_addr,
+                                            message: error_message,
+                                        })
+                                    }
+                                    _ => Err(IronClusterWriteError::ForwardWriteNetwork {
+                                        leader_id,
+                                        leader_addr,
+                                        message: error_message,
+                                    }),
+                                }
                             }
                         }
                     }
