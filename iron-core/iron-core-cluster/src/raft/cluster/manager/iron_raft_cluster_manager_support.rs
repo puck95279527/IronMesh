@@ -84,18 +84,6 @@ impl IronRaftClusterManagerSupport {
                 );
             }
 
-            let node_name = table
-                .get("node_name")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    IoError::new(
-                        ErrorKind::InvalidData,
-                        format!(
-                            "{} 中的 IronRaftNode 条目缺少 node_name",
-                            config_path.display()
-                        ),
-                    )
-                })?;
             let node_addr = table
                 .get("node_addr")
                 .and_then(Value::as_str)
@@ -119,7 +107,6 @@ impl IronRaftClusterManagerSupport {
 
             let mut node = IronRaftNode::new(
                 node_id as u64,
-                node_name,
                 node_addr,
                 http_debug_addr,
                 IronRaftNodeRole::Voter,
@@ -174,13 +161,11 @@ impl IronRaftClusterManagerSupport {
         raft: Raft<IronRaftTypeConfig>,
     ) {
         let node_id = manager.current_node.node_id;
-        let node_name = manager.current_node.node_name.clone();
         let debug_http_addr = manager.current_node.http_debug_addr.clone();
 
         if let Some(http_debug_addr) = debug_http_addr {
             tasks.spawn(async move {
-                if let Err(error) =
-                    start_query_http_with_addr(node_id, node_name, http_debug_addr, raft).await
+                if let Err(error) = start_query_http_with_addr(node_id, http_debug_addr, raft).await
                 {
                     tracing::warn!(%error, "[Iron] [cluster] Raft 调试 HTTP 服务退出");
                 }
@@ -301,10 +286,7 @@ impl IronRaftClusterManagerSupport {
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(bool, bool), Box<dyn Error>> {
-        let self_tag = self_node_tag(
-            manager.current_node.node_id,
-            &manager.current_node.node_name,
-        );
+        let self_tag = self_node_tag(manager.current_node.node_id);
         let mut saw_peer = false;
 
         for (peer_id, peer) in &manager.boot_nodes {
@@ -312,7 +294,7 @@ impl IronRaftClusterManagerSupport {
                 continue;
             }
 
-            let peer_tag = peer_node_tag(*peer_id, peer.node_name.as_str());
+            let peer_tag = peer_node_tag(*peer_id);
             if !Self::is_peer_reachable(&peer.node_addr).await {
                 tracing::debug!(%self_tag, %peer_tag, "[Iron] [cluster] 注册节点 TCP 暂不可达，跳过本次加入探测");
                 continue;
@@ -328,7 +310,6 @@ impl IronRaftClusterManagerSupport {
             match client
                 .join_node(
                     manager.current_node.node_id,
-                    manager.current_node.node_name.clone(),
                     manager.current_node.node_addr.clone(),
                 )
                 .await
@@ -367,10 +348,7 @@ impl IronRaftClusterManagerSupport {
         leader_id: u64,
     ) -> Result<(), Box<dyn Error>> {
         let current_node_id = manager.current_node.node_id;
-        let self_tag = self_node_tag(
-            manager.current_node.node_id,
-            &manager.current_node.node_name,
-        );
+        let self_tag = self_node_tag(manager.current_node.node_id);
 
         let metrics = raft
             .wait(Some(JOIN_LOCAL_READY_TIMEOUT))
@@ -402,10 +380,7 @@ impl IronRaftClusterManagerSupport {
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(), Box<dyn Error>> {
-        let self_tag = self_node_tag(
-            manager.current_node.node_id,
-            &manager.current_node.node_name,
-        );
+        let self_tag = self_node_tag(manager.current_node.node_id);
         tracing::info!(%self_tag, "[Iron] [cluster] 开始初始化最小 Raft 集群");
         let init_members = BTreeMap::from([(
             manager.current_node.node_id,
@@ -422,10 +397,7 @@ impl IronRaftClusterManagerSupport {
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(), Box<dyn Error>> {
-        let self_tag = self_node_tag(
-            manager.current_node.node_id,
-            &manager.current_node.node_name,
-        );
+        let self_tag = self_node_tag(manager.current_node.node_id);
         tracing::info!(%self_tag, "[Iron] [cluster] 正在等待当前节点成为领导节点(leader)");
         if let Err(error) = raft
             .wait(None)
@@ -458,11 +430,8 @@ impl IronRaftClusterManagerSupport {
         target_id: u64,
         target_node: &IronRaftNode,
     ) -> Result<bool, Box<dyn Error>> {
-        let self_tag = self_node_tag(
-            manager.current_node.node_id,
-            &manager.current_node.node_name,
-        );
-        let peer_tag = peer_node_tag(target_id, target_node.node_name.as_str());
+        let self_tag = self_node_tag(manager.current_node.node_id);
+        let peer_tag = peer_node_tag(target_id);
 
         if !Self::is_peer_reachable(&target_node.node_addr).await {
             tracing::info!(

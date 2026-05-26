@@ -146,16 +146,11 @@ impl IronRaftTcpServer {
                     }
                     IronRaftTcpRpcResponse::ClientWrite(result)
                 }
-                IronRaftTcpRpcRequest::JoinNode {
-                    node_id,
-                    node_name,
-                    node_addr,
-                } => {
+                IronRaftTcpRpcRequest::JoinNode { node_id, node_addr } => {
                     let result = Self::handle_join_node(
                         raft.clone(),
                         boot_node_ids.clone(),
                         node_id,
-                        node_name,
                         node_addr,
                     )
                     .await;
@@ -234,15 +229,14 @@ impl IronRaftTcpServer {
         raft: Raft<IronRaftTypeConfig>,
         boot_node_ids: BTreeSet<u64>,
         node_id: u64,
-        node_name: String,
         node_addr: String,
     ) -> Result<(), String> {
-        let peer_tag = peer_node_tag(node_id, &node_name);
+        let peer_tag = peer_node_tag(node_id);
         let metrics = raft.metrics().borrow().clone();
         if metrics.state != ServerState::Leader {
             return Err(format!(
-                "当前节点不是 leader，current_leader={:?}, node_id={}, node_name={}",
-                metrics.current_leader, node_id, node_name
+                "当前节点不是 leader，current_leader={:?}, node_id={}",
+                metrics.current_leader, node_id
             ));
         }
 

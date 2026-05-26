@@ -14,7 +14,6 @@ pub enum IronRaftTcpRpcRequest {
     ClientWrite(IronRaftRequest),                            // 客户端业务写入请求。
     JoinNode {
         node_id: u64,      // 请求加入的节点 ID。
-        node_name: String, // 请求加入的节点名称。
         node_addr: String, // 请求加入的节点地址。
     },
 }

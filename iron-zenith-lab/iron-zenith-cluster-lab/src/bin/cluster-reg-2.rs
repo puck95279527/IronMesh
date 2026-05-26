@@ -11,20 +11,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_cluster_process_logging()?;
     let cluster_manager = IronRaftClusterManager::new(IronRaftNode::new(
         2,
-        "cluster-reg-2",
         "127.0.0.1:5002",
         Some("127.0.0.1:7102".to_string()),
         IronRaftNodeRole::Voter,
     ))?;
 
     let cluster_handle = cluster_manager.start().await?;
-    write_current_node_cluster_data(
-        &cluster_handle,
-        2,
-        "cluster-reg-2",
-        "127.0.0.1:5002",
-        "boot",
-    )
-    .await;
+    write_current_node_cluster_data(&cluster_handle, 2, "127.0.0.1:5002", "boot").await;
     cluster_handle.wait_forever().await
 }

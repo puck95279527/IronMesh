@@ -64,10 +64,7 @@ impl IronRaftClusterManagerFlow {
             _ => {}
         }
 
-        let self_tag = self_node_tag(
-            manager.current_node.node_id,
-            &manager.current_node.node_name,
-        );
+        let self_tag = self_node_tag(manager.current_node.node_id);
         tracing::info!(%self_tag, "[Iron] [cluster] 节点配置校验完成");
         Ok(())
     }
@@ -87,7 +84,6 @@ impl IronRaftClusterManagerFlow {
     > {
         let config = IronRaftClusterManagerSupport::build_raft_config()?;
         let node_id = manager.current_node.node_id;
-        let node_name = manager.current_node.node_name.clone();
         let node_addr = manager.current_node.node_addr.clone();
         let state_machine_store = IronRaftStateMachineStore::default();
         let (network_event_sender, network_event_receiver) = mpsc::channel(1024);
@@ -100,7 +96,7 @@ impl IronRaftClusterManagerFlow {
         )
         .await?;
 
-        let self_tag = self_node_tag(node_id, &node_name);
+        let self_tag = self_node_tag(node_id);
         tracing::info!(%self_tag, "[Iron] [cluster] 启动 Raft 集群节点");
         let boot_node_ids = manager.boot_nodes.keys().copied().collect::<BTreeSet<_>>();
         tracing::info!(%self_tag, "[Iron] [cluster] 已创建 Raft 运行时");
@@ -137,15 +133,12 @@ impl IronRaftClusterManagerFlow {
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<bool, Box<dyn Error>> {
-        let self_tag = self_node_tag(
-            manager.current_node.node_id,
-            &manager.current_node.node_name,
-        );
-        let many_tag = many_nodes_tag(manager.boot_nodes.iter().filter_map(|(peer_id, peer)| {
+        let self_tag = self_node_tag(manager.current_node.node_id);
+        let many_tag = many_nodes_tag(manager.boot_nodes.iter().filter_map(|(peer_id, _)| {
             if *peer_id == manager.current_node.node_id {
                 None
             } else {
-                Some((*peer_id, peer.node_name.as_str()))
+                Some(*peer_id)
             }
         }));
         let is_boot_node = manager.current_node.is_boot_node();
@@ -189,15 +182,12 @@ impl IronRaftClusterManagerFlow {
         manager: &IronRaftClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(), Box<dyn Error>> {
-        let self_tag = self_node_tag(
-            manager.current_node.node_id,
-            &manager.current_node.node_name,
-        );
-        let many_tag = many_nodes_tag(manager.boot_nodes.iter().filter_map(|(peer_id, peer)| {
+        let self_tag = self_node_tag(manager.current_node.node_id);
+        let many_tag = many_nodes_tag(manager.boot_nodes.iter().filter_map(|(peer_id, _)| {
             if *peer_id == manager.current_node.node_id {
                 None
             } else {
-                Some((*peer_id, peer.node_name.as_str()))
+                Some(*peer_id)
             }
         }));
 

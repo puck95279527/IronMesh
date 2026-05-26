@@ -38,7 +38,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_cluster_process_logging()?;
     let cluster_manager = IronRaftClusterManager::new(IronRaftNode::new(
         5,
-        "cluster-gate",
         "127.0.0.1:5005",
         Some("127.0.0.1:7105".to_string()),
         IronRaftNodeRole::Learner,
@@ -46,13 +45,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cluster_handle = Arc::new(cluster_manager.start().await?);
     spawn_local_cluster_data_size_logger(cluster_handle.clone());
-    write_current_node_cluster_data(
-        &cluster_handle,
-        5,
-        "cluster-gate",
-        "127.0.0.1:5005",
-        "normal",
-    )
-    .await;
+    write_current_node_cluster_data(&cluster_handle, 5, "127.0.0.1:5005", "normal").await;
     cluster_handle.wait_forever().await
 }

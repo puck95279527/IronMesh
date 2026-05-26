@@ -237,17 +237,8 @@ impl IronRaftTcpClient {
     }
 
     // 请求目标节点把当前节点加入集群。
-    pub async fn join_node(
-        &self,
-        node_id: u64,
-        node_name: String,
-        node_addr: String,
-    ) -> Result<(), std::io::Error> {
-        let request = IronRaftTcpRpcRequest::JoinNode {
-            node_id,
-            node_name,
-            node_addr,
-        };
+    pub async fn join_node(&self, node_id: u64, node_addr: String) -> Result<(), std::io::Error> {
+        let request = IronRaftTcpRpcRequest::JoinNode { node_id, node_addr };
 
         match tokio::time::timeout(JOIN_NODE_TIMEOUT, self.send_request_with_retry(request)).await {
             Ok(result) => match result? {
