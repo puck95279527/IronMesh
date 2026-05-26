@@ -26,3 +26,11 @@ where
 
     format!("[many={items}]")
 }
+
+// 生成排除当前节点后的多个 Raft 节点日志标签。
+pub(crate) fn other_tag<I>(self_node_id: u64, nodes: I) -> String
+where
+    I: IntoIterator<Item = u64>,
+{
+    many_tag(nodes.into_iter().filter(|node_id| *node_id != self_node_id))
+}

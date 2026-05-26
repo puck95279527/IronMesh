@@ -63,11 +63,11 @@ impl IronRaftClusterManager {
         // 阶段 1：校验当前节点、注册节点表和唯一首次起盘节点。
         IronRaftClusterManagerFlow::validate_topology(&self)?;
 
-        // 阶段 2：创建 Raft 实例、TCP 服务和本节点运行所需的基础对象。
+        // 阶段 2：先绑定 TCP 端口，再创建 Raft 实例、TCP 服务和本节点运行所需的基础对象。
         let (raft, tcp_server, tcp_listener, state_machine_store, network_event_receiver) =
             IronRaftClusterManagerFlow::build_raft_runtime(&mut self).await?;
 
-        // 阶段 3：启动长期运行的后台服务，让节点具备对外通信和调试查询能力。
+        // 阶段 3：启动长期运行的后台服务，让节点在加入集群前已经具备对外通信能力。
         let tasks = IronRaftClusterManagerFlow::spawn_runtime_services(
             &self,
             raft.clone(),
