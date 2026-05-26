@@ -11,7 +11,7 @@
 | 不做持久化 | Raft log、vote、state machine、snapshot 继续使用内存实现。 |
 | 不扩散功能 | 优先保证现有启动、TCP 通信、成员维护、日志和运行稳定性。 |
 | TCP 优先 | 集群内部通信优先使用 TCP，HTTP 只作为人工验证查询入口。 |
-| 固定 Boot 起盘 | 配置中唯一 `is_boot_node = true` 的注册节点负责首次起盘。 |
+| 固定起盘节点 | 配置中唯一 `is_boot_node = true` 的注册节点负责首次起盘。 |
 | 不自动移除 voter | `cluster-reg-*` 投票节点只探测和记录日志，不自动从 membership 移除。 |
 | learner 自动移除 | learner 节点的 Raft TCP 复制连接断开后，由 leader 直接移出集群。 |
 | 库不默认阻塞 | `start()` 等待当前节点完成起盘或加入集群后返回运行句柄。 |
@@ -20,7 +20,7 @@
 
 | 分类 | 状态 | 说明 |
 |---|---|---|
-| 集群起盘 | 可用 | 唯一 boot 节点初始化 Raft 集群，其它注册节点等待并加入。 |
+| 集群起盘 | 可用 | 唯一起盘节点初始化 Raft 集群，其它注册节点等待并加入。 |
 | 节点加入 | 可用 | 注册节点加入为 voter，普通节点加入为 learner。 |
 | 启动流程 | 可用 | `IronRaftClusterManager::start()` 完成起盘或加入后返回运行句柄。 |
 | 后台任务 | 可用 | TCP、HTTP、维护任务统一注册进 `JoinSet`，由运行句柄托管。 |

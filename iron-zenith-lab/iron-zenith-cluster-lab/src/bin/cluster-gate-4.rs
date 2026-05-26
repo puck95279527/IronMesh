@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "cluster-gate",
         "127.0.0.1:5004",
         Some("127.0.0.1:7104".to_string()),
-        IronRaftNodeRole::Normal,
+        IronRaftNodeRole::Learner,
     ))?;
 
     let cluster_handle = cluster_manager.start().await?;

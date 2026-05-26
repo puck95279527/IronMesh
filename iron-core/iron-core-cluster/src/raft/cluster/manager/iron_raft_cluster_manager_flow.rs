@@ -47,17 +47,17 @@ impl IronRaftClusterManagerFlow {
             .boot_nodes
             .contains_key(&manager.current_node.node_id);
         match manager.current_node.node_role {
-            IronRaftNodeRole::Boot if !contains_current => {
+            IronRaftNodeRole::Voter if !contains_current => {
                 return Err(IoError::new(
                     ErrorKind::InvalidInput,
-                    "注册节点必须存在于 cluster-boot.toml",
+                    "Raft voter 节点必须存在于 cluster-boot.toml",
                 )
                 .into());
             }
-            IronRaftNodeRole::Normal if contains_current => {
+            IronRaftNodeRole::Learner if contains_current => {
                 return Err(IoError::new(
                     ErrorKind::InvalidInput,
-                    "普通节点不能配置在注册节点表中",
+                    "Raft learner 节点不能配置在注册节点表中",
                 )
                 .into());
             }

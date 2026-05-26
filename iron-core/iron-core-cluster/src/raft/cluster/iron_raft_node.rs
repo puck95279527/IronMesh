@@ -2,10 +2,10 @@
 #[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IronRaftNodeRole {
-    // 注册节点，用于参与 Raft 投票。
-    Boot,
-    // 普通节点，用于作为 learner 加入集群。
-    Normal,
+    // 投票节点，用于参与 Raft 投票。
+    Voter,
+    // 学习节点，用于作为 learner 加入集群。
+    Learner,
 }
 
 // IronMesh Raft 节点。
@@ -39,7 +39,7 @@ impl IronRaftNode {
             node_name: node_name.into(),
             node_addr: node_addr.into(),
             http_debug_addr,
-            is_boot_node: matches!(node_role, IronRaftNodeRole::Boot),
+            is_boot_node: matches!(node_role, IronRaftNodeRole::Voter),
             node_role,
         }
     }

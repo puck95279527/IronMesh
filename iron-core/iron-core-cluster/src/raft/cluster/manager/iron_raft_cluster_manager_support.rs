@@ -122,7 +122,7 @@ impl IronRaftClusterManagerSupport {
                 node_name,
                 node_addr,
                 http_debug_addr,
-                IronRaftNodeRole::Boot,
+                IronRaftNodeRole::Voter,
             );
             node.is_boot_node = is_boot_node;
             if boot_nodes.insert(node.node_id, node).is_some() {

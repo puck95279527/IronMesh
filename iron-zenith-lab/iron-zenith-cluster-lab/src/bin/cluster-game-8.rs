@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "cluster-game",
         "127.0.0.1:5008",
         Some("127.0.0.1:7108".to_string()),
-        IronRaftNodeRole::Normal,
+        IronRaftNodeRole::Learner,
     ))?;
 
     let cluster_handle = cluster_manager.start().await?;
