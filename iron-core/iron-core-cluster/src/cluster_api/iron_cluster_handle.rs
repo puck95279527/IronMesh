@@ -54,6 +54,16 @@ impl IronClusterHandle {
         self.state_machine_store.state_machine.lock().await.clone()
     }
 
+    // 读取当前节点 ID。
+    pub fn current_node_id(&self) -> u64 {
+        self.current_node.node_id
+    }
+
+    // 读取当前节点已经解析完成的 TCP 地址。
+    pub fn current_node_addr(&self) -> String {
+        self.current_node.node_addr()
+    }
+
     // 写入集群业务数据。
     pub async fn write_cluster_data(
         &self,

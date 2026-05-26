@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::io::Cursor;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use openraft::ChangeMembers;
@@ -13,6 +12,7 @@ use openraft::Snapshot;
 use openraft::SnapshotMeta;
 use openraft::StoredMembership;
 use openraft::Vote;
+use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 
 use crate::raft::iron_raft_constants::MAX_TCP_CONNECTIONS;
@@ -45,9 +45,8 @@ impl IronRaftTcpServer {
     }
 
     // 启动 TCP 服务端并持续处理连接。
-    pub async fn serve(self, tcp_addr: String) -> Result<(), Box<dyn std::error::Error>> {
-        let addr = tcp_addr.parse::<SocketAddr>()?;
-        let listener = tokio::net::TcpListener::bind(addr).await?;
+    pub async fn serve(self, listener: TcpListener) -> Result<(), Box<dyn std::error::Error>> {
+        let tcp_addr = listener.local_addr()?;
         tracing::info!(%tcp_addr, "[Iron] [cluster] 启动 Raft TCP 服务");
 
         let boot_node_ids = self.boot_node_ids.clone();

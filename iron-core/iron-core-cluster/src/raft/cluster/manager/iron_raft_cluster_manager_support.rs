@@ -11,6 +11,7 @@ use openraft::ChangeMembers;
 use openraft::Config;
 use openraft::Raft;
 use openraft::ServerState;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use toml::Value;
@@ -84,18 +85,37 @@ impl IronRaftClusterManagerSupport {
                 );
             }
 
-            let node_addr = table
-                .get("node_addr")
+            let advertise_node_ip = table
+                .get("advertise_node_ip")
                 .and_then(Value::as_str)
                 .ok_or_else(|| {
                     IoError::new(
                         ErrorKind::InvalidData,
                         format!(
-                            "{} 中的 IronRaftNode 条目缺少 node_addr",
+                            "{} 中的 IronRaftNode 条目缺少 advertise_node_ip",
                             config_path.display()
                         ),
                     )
                 })?;
+            let node_port = table
+                .get("node_port")
+                .and_then(Value::as_integer)
+                .ok_or_else(|| {
+                    IoError::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "{} 中的 IronRaftNode 条目缺少 node_port",
+                            config_path.display()
+                        ),
+                    )
+                })?;
+            if !(0..=u16::MAX as i64).contains(&node_port) {
+                return Err(IoError::new(
+                    ErrorKind::InvalidData,
+                    "注册节点 node_port 超出 u16 范围",
+                )
+                .into());
+            }
             let http_debug_addr = table
                 .get("http_debug_addr")
                 .and_then(Value::as_str)
@@ -107,7 +127,8 @@ impl IronRaftClusterManagerSupport {
 
             let mut node = IronRaftNode::new(
                 node_id as u64,
-                node_addr,
+                advertise_node_ip,
+                Some(node_port as u16),
                 http_debug_addr,
                 IronRaftNodeRole::Voter,
             );
@@ -145,10 +166,10 @@ impl IronRaftClusterManagerSupport {
     pub fn spawn_raft_tcp_server(
         tasks: &mut JoinSet<()>,
         tcp_server: IronRaftTcpServer,
-        node_addr: String,
+        tcp_listener: TcpListener,
     ) {
         tasks.spawn(async move {
-            if let Err(error) = tcp_server.serve(node_addr).await {
+            if let Err(error) = tcp_server.serve(tcp_listener).await {
                 tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
             }
         });
@@ -295,14 +316,15 @@ impl IronRaftClusterManagerSupport {
             }
 
             let peer_tag = peer_node_tag(*peer_id);
-            if !Self::is_peer_reachable(&peer.node_addr).await {
+            let peer_addr = peer.node_addr();
+            if !Self::is_peer_reachable(&peer_addr).await {
                 tracing::debug!(%self_tag, %peer_tag, "[Iron] [cluster] 注册节点 TCP 暂不可达，跳过本次加入探测");
                 continue;
             }
 
             let client = IronRaftTcpClient {
                 target_node_id: *peer_id,
-                target_addr: peer.node_addr.clone(),
+                target_addr: peer_addr,
                 cached_stream: Arc::new(tokio::sync::Mutex::new(None)),
                 event_sender: None,
             };
@@ -310,7 +332,7 @@ impl IronRaftClusterManagerSupport {
             match client
                 .join_node(
                     manager.current_node.node_id,
-                    manager.current_node.node_addr.clone(),
+                    manager.current_node.node_addr(),
                 )
                 .await
             {
@@ -384,7 +406,7 @@ impl IronRaftClusterManagerSupport {
         tracing::info!(%self_tag, "[Iron] [cluster] 开始初始化最小 Raft 集群");
         let init_members = BTreeMap::from([(
             manager.current_node.node_id,
-            openraft::BasicNode::new(manager.current_node.node_addr.clone()),
+            openraft::BasicNode::new(manager.current_node.node_addr()),
         )]);
 
         tokio::time::sleep(CLUSTER_INITIALIZE_DELAY).await;
@@ -433,7 +455,8 @@ impl IronRaftClusterManagerSupport {
         let self_tag = self_node_tag(manager.current_node.node_id);
         let peer_tag = peer_node_tag(target_id);
 
-        if !Self::is_peer_reachable(&target_node.node_addr).await {
+        let target_addr = target_node.node_addr();
+        if !Self::is_peer_reachable(&target_addr).await {
             tracing::info!(
                 %self_tag,
                 %peer_tag,
@@ -443,7 +466,7 @@ impl IronRaftClusterManagerSupport {
             return Ok(false);
         }
 
-        let target_basic_node = openraft::BasicNode::new(target_node.node_addr.clone());
+        let target_basic_node = openraft::BasicNode::new(target_addr);
 
         for attempt in 1..=BOOT_NODE_JOIN_RETRY_LIMIT {
             match raft

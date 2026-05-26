@@ -3,6 +3,7 @@ use std::error::Error;
 use std::io::{Error as IoError, ErrorKind};
 
 use openraft::Raft;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
@@ -43,6 +44,19 @@ impl IronRaftClusterManagerFlow {
             .into());
         }
 
+        for boot_node in manager.boot_nodes.values() {
+            if boot_node.node_port.is_none() {
+                return Err(IoError::new(
+                    ErrorKind::InvalidInput,
+                    format!(
+                        "注册节点必须配置固定 node_port: node_id={}",
+                        boot_node.node_id
+                    ),
+                )
+                .into());
+            }
+        }
+
         let contains_current = manager
             .boot_nodes
             .contains_key(&manager.current_node.node_id);
@@ -69,22 +83,29 @@ impl IronRaftClusterManagerFlow {
         Ok(())
     }
 
-    // 阶段 2：创建当前节点的 Raft 实例和 TCP 服务对象。
+    // 阶段 2：先绑定当前节点 TCP 端口，再创建 Raft 实例和 TCP 服务对象。
     pub(crate) async fn build_raft_runtime(
-        manager: &IronRaftClusterManager,
+        manager: &mut IronRaftClusterManager,
     ) -> Result<
         (
             Raft<IronRaftTypeConfig>,
             IronRaftTcpServer,
-            String,
+            TcpListener,
             IronRaftStateMachineStore,
             mpsc::Receiver<IronRaftNetworkEvent>,
         ),
         Box<dyn Error>,
     > {
+        let bind_addr = manager.current_node.bind_addr();
+        let tcp_listener = TcpListener::bind(&bind_addr).await?;
+        let local_addr = tcp_listener.local_addr()?;
+        manager
+            .current_node
+            .set_resolved_node_port(local_addr.port());
+        let node_addr = manager.current_node.node_addr();
+
         let config = IronRaftClusterManagerSupport::build_raft_config()?;
         let node_id = manager.current_node.node_id;
-        let node_addr = manager.current_node.node_addr.clone();
         let state_machine_store = IronRaftStateMachineStore::default();
         let (network_event_sender, network_event_receiver) = mpsc::channel(1024);
         let raft = Raft::<IronRaftTypeConfig>::new(
@@ -97,28 +118,29 @@ impl IronRaftClusterManagerFlow {
         .await?;
 
         let self_tag = self_node_tag(node_id);
+        tracing::info!(%self_tag, %bind_addr, %node_addr, "[Iron] [cluster] 已绑定 Raft TCP 端口");
         tracing::info!(%self_tag, "[Iron] [cluster] 启动 Raft 集群节点");
         let boot_node_ids = manager.boot_nodes.keys().copied().collect::<BTreeSet<_>>();
         tracing::info!(%self_tag, "[Iron] [cluster] 已创建 Raft 运行时");
         Ok((
             raft.clone(),
             IronRaftTcpServer::new(raft, boot_node_ids),
-            node_addr,
+            tcp_listener,
             state_machine_store,
             network_event_receiver,
         ))
     }
 
-    // 阶段 3：启动当前节点的后台运行服务。
+    // 阶段 3：用阶段 2 已经绑定好的 TCP listener 启动当前节点的后台运行服务。
     pub(crate) fn spawn_runtime_services(
         manager: &IronRaftClusterManager,
         raft: Raft<IronRaftTypeConfig>,
         tcp_server: IronRaftTcpServer,
-        node_addr: String,
+        tcp_listener: TcpListener,
         network_event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
     ) -> JoinSet<()> {
         let mut tasks = JoinSet::new();
-        IronRaftClusterManagerSupport::spawn_raft_tcp_server(&mut tasks, tcp_server, node_addr);
+        IronRaftClusterManagerSupport::spawn_raft_tcp_server(&mut tasks, tcp_server, tcp_listener);
         IronRaftClusterManagerSupport::spawn_debug_http(&mut tasks, manager, raft.clone());
         IronRaftClusterManagerSupport::spawn_learner_disconnect_remover(
             &mut tasks,

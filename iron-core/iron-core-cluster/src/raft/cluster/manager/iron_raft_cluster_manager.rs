@@ -6,6 +6,7 @@ use crate::cluster_api::iron_cluster_handle::IronClusterHandle;
 use crate::raft::cluster::iron_raft_node::{IronRaftNode, IronRaftNodeRole};
 use crate::raft::cluster::manager::iron_raft_cluster_manager_flow::IronRaftClusterManagerFlow;
 use crate::raft::cluster::manager::iron_raft_cluster_manager_support::IronRaftClusterManagerSupport;
+use crate::utils::iron_snowflake_id::IronSnowflakeIdGenerator;
 
 // IronMesh Raft 集群管理器。
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -34,8 +35,9 @@ impl IronRaftClusterManager {
     }
 
     // 创建 learner Raft 集群管理器，并从配置文件加载注册节点表。
-    pub fn add_learner(node_id: u64, node_addr: impl Into<String>) -> Result<Self, Box<dyn Error>> {
+    pub fn add_learner(advertise_node_ip: impl Into<String>) -> Result<Self, Box<dyn Error>> {
         let boot_nodes = IronRaftClusterManagerSupport::load_cluster_boot()?;
+        let node_id = IronSnowflakeIdGenerator::next_u64();
         if boot_nodes.contains_key(&node_id) {
             return Err(IoError::new(
                 ErrorKind::InvalidInput,
@@ -45,26 +47,32 @@ impl IronRaftClusterManager {
         }
 
         Ok(Self {
-            current_node: IronRaftNode::new(node_id, node_addr, None, IronRaftNodeRole::Learner),
+            current_node: IronRaftNode::new(
+                node_id,
+                advertise_node_ip,
+                None,
+                None,
+                IronRaftNodeRole::Learner,
+            ),
             boot_nodes,
         })
     }
 
     // 启动当前节点，等待其完成起盘或加入集群后返回运行句柄。
-    pub async fn start(self) -> Result<IronClusterHandle, Box<dyn Error>> {
+    pub async fn start(mut self) -> Result<IronClusterHandle, Box<dyn Error>> {
         // 阶段 1：校验当前节点、注册节点表和唯一首次起盘节点。
         IronRaftClusterManagerFlow::validate_topology(&self)?;
 
         // 阶段 2：创建 Raft 实例、TCP 服务和本节点运行所需的基础对象。
-        let (raft, tcp_server, node_addr, state_machine_store, network_event_receiver) =
-            IronRaftClusterManagerFlow::build_raft_runtime(&self).await?;
+        let (raft, tcp_server, tcp_listener, state_machine_store, network_event_receiver) =
+            IronRaftClusterManagerFlow::build_raft_runtime(&mut self).await?;
 
         // 阶段 3：启动长期运行的后台服务，让节点具备对外通信和调试查询能力。
         let tasks = IronRaftClusterManagerFlow::spawn_runtime_services(
             &self,
             raft.clone(),
             tcp_server,
-            node_addr,
+            tcp_listener,
             network_event_receiver,
         );
 
