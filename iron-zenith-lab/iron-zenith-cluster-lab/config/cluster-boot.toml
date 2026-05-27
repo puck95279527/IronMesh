@@ -1,18 +1,18 @@
-# IronMesh Raft 节点验证配置。
-[[IronRaftNode]]
+# IronMesh 集群节点验证配置。
+[[IronClusterNode]]
 node_id = 1
 advertise_node_ip = "127.0.0.1"
 node_port = 5001
 http_debug_addr = "127.0.0.1:7101"
 is_boot_node = true
 
-[[IronRaftNode]]
+[[IronClusterNode]]
 node_id = 2
 advertise_node_ip = "127.0.0.1"
 node_port = 5002
 http_debug_addr = "127.0.0.1:7102"
 
-[[IronRaftNode]]
+[[IronClusterNode]]
 node_id = 3
 advertise_node_ip = "127.0.0.1"
 node_port = 5003

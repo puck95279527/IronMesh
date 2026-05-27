@@ -22,7 +22,7 @@
 |---|---|---|
 | 集群起盘 | 可用 | 唯一起盘节点初始化 Raft 集群，其它注册节点等待并加入。 |
 | 节点加入 | 可用 | 注册节点加入为 voter，普通节点加入为 learner。 |
-| 启动流程 | 可用 | `IronRaftClusterManager::start()` 完成起盘或加入后返回运行句柄。 |
+| 启动流程 | 可用 | `IronClusterManager::start()` 完成起盘或加入后返回运行句柄。 |
 | 后台任务 | 可用 | TCP、HTTP、维护任务统一注册进 `JoinSet`，由运行句柄托管。 |
 | Raft 通信 | 可用 | Raft RPC 使用 TCP frame 传输，客户端复用 TCP 连接。 |
 | 写入路径 | 可用 | 非 leader 节点可转发集群业务数据写入到 leader。 |

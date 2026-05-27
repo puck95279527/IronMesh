@@ -7,13 +7,13 @@ use openraft::RaftMetrics;
 use tokio::task::JoinSet;
 
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
-use crate::control_plane::iron_raft_node::IronRaftNode;
+use crate::control_plane::iron_cluster_node::IronClusterNode;
 use crate::data_plane::iron_cluster_data_command::IronClusterDataCommand;
-use crate::data_plane::iron_raft_state_machine_data::IronRaftStateMachineData;
+use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_LIMIT;
+use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::command::iron_raft_request::IronRaftRequest;
-use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineStore;
@@ -21,7 +21,7 @@ use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineSto
 // IronMesh 集群运行句柄。
 pub struct IronClusterHandle {
     // 当前集群节点信息，用于对外 API 记录操作来源。
-    current_node: IronRaftNode,
+    current_node: IronClusterNode,
     // Raft 节点句柄，仅供 crate 内部连接底层 Raft 运行时。
     pub(crate) raft: Raft<IronRaftTypeConfig>,
     // 当前节点本地状态机存储，用于读取已经 apply 的本地数据。
@@ -35,7 +35,7 @@ pub struct IronClusterHandle {
 impl IronClusterHandle {
     // 创建集群运行句柄。
     pub(crate) fn new(
-        current_node: IronRaftNode,
+        current_node: IronClusterNode,
         raft: Raft<IronRaftTypeConfig>,
         state_machine_store: IronRaftStateMachineStore,
         tasks: JoinSet<()>,
@@ -50,7 +50,7 @@ impl IronClusterHandle {
     }
 
     // 读取当前节点本地已经 apply 的状态机数据。
-    pub async fn local_state_machine_data(&self) -> IronRaftStateMachineData {
+    pub async fn local_state_machine_data(&self) -> IronClusterState {
         self.state_machine_store.state_machine.lock().await.clone()
     }
 
@@ -68,7 +68,7 @@ impl IronClusterHandle {
     pub async fn write_cluster_data(
         &self,
         command: IronClusterDataCommand,
-    ) -> Result<IronRaftResponse, IronClusterWriteError> {
+    ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
         let (action, key, value) = match &command {
             IronClusterDataCommand::Set { key, value } => ("set", key.clone(), value.clone()),
         };

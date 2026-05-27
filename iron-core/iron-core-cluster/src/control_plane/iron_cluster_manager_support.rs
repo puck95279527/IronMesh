@@ -16,9 +16,9 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use toml::Value;
 
-use crate::control_plane::iron_raft_cluster_manager::IronRaftClusterManager;
-use crate::control_plane::iron_raft_node::IronRaftNode;
-use crate::control_plane::iron_raft_node::IronRaftNodeRole;
+use crate::control_plane::iron_cluster_manager::IronClusterManager;
+use crate::control_plane::iron_cluster_node::IronClusterNode;
+use crate::control_plane::iron_cluster_node::IronClusterNodeRole;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_LIMIT;
 use crate::raft::iron_raft_constants::CLUSTER_INITIALIZE_DELAY;
@@ -36,12 +36,12 @@ use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::query::iron_raft_query::start_query_http_with_addr;
 
-// IronMesh Raft 集群管理辅助动作。
-pub struct IronRaftClusterManagerSupport;
+// IronMesh 集群管理辅助动作。
+pub struct IronClusterManagerSupport;
 
-impl IronRaftClusterManagerSupport {
+impl IronClusterManagerSupport {
     // 从 `cluster-boot.toml` 读取注册节点表。
-    pub fn load_cluster_boot() -> Result<BTreeMap<u64, IronRaftNode>, Box<dyn Error>> {
+    pub fn load_cluster_boot() -> Result<BTreeMap<u64, IronClusterNode>, Box<dyn Error>> {
         let config_path = env::current_exe()?
             .parent()
             .ok_or_else(|| IoError::new(ErrorKind::NotFound, "无法找到当前可执行文件目录"))?
@@ -49,12 +49,12 @@ impl IronRaftClusterManagerSupport {
         let content = fs::read_to_string(&config_path)?;
         let value: Value = toml::from_str(&content)?;
         let boot_nodes_value = value
-            .get("IronRaftNode")
+            .get("IronClusterNode")
             .and_then(Value::as_array)
             .ok_or_else(|| {
                 IoError::new(
                     ErrorKind::InvalidData,
-                    format!("{} 缺少 IronRaftNode 数组", config_path.display()),
+                    format!("{} 缺少 IronClusterNode 数组", config_path.display()),
                 )
             })?;
 
@@ -63,7 +63,10 @@ impl IronRaftClusterManagerSupport {
             let table = item.as_table().ok_or_else(|| {
                 IoError::new(
                     ErrorKind::InvalidData,
-                    format!("{} 中的 IronRaftNode 条目必须是表", config_path.display()),
+                    format!(
+                        "{} 中的 IronClusterNode 条目必须是表",
+                        config_path.display()
+                    ),
                 )
             })?;
 
@@ -74,7 +77,7 @@ impl IronRaftClusterManagerSupport {
                     IoError::new(
                         ErrorKind::InvalidData,
                         format!(
-                            "{} 中的 IronRaftNode 条目缺少 node_id",
+                            "{} 中的 IronClusterNode 条目缺少 node_id",
                             config_path.display()
                         ),
                     )
@@ -92,7 +95,7 @@ impl IronRaftClusterManagerSupport {
                     IoError::new(
                         ErrorKind::InvalidData,
                         format!(
-                            "{} 中的 IronRaftNode 条目缺少 advertise_node_ip",
+                            "{} 中的 IronClusterNode 条目缺少 advertise_node_ip",
                             config_path.display()
                         ),
                     )
@@ -104,7 +107,7 @@ impl IronRaftClusterManagerSupport {
                     IoError::new(
                         ErrorKind::InvalidData,
                         format!(
-                            "{} 中的 IronRaftNode 条目缺少 node_port",
+                            "{} 中的 IronClusterNode 条目缺少 node_port",
                             config_path.display()
                         ),
                     )
@@ -125,12 +128,12 @@ impl IronRaftClusterManagerSupport {
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
 
-            let mut node = IronRaftNode::new(
+            let mut node = IronClusterNode::new(
                 node_id as u64,
                 advertise_node_ip,
                 Some(node_port as u16),
                 http_debug_addr,
-                IronRaftNodeRole::Voter,
+                IronClusterNodeRole::Voter,
             );
             node.is_boot_node = is_boot_node;
             if boot_nodes.insert(node.node_id, node).is_some() {
@@ -178,7 +181,7 @@ impl IronRaftClusterManagerSupport {
     // 启动可选的调试 HTTP 查询服务后台任务。
     pub fn spawn_debug_http(
         tasks: &mut JoinSet<()>,
-        manager: &IronRaftClusterManager,
+        manager: &IronClusterManager,
         raft: Raft<IronRaftTypeConfig>,
     ) {
         let node_id = manager.current_node.node_id;
@@ -304,7 +307,7 @@ impl IronRaftClusterManagerSupport {
 
     // 遍历其他注册节点，尝试加入已有集群。
     pub async fn try_join_existing_cluster(
-        manager: &IronRaftClusterManager,
+        manager: &IronClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(bool, bool), Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);
@@ -365,7 +368,7 @@ impl IronRaftClusterManagerSupport {
 
     // 等待当前节点本地 Raft 状态确认已经完成集群加入。
     pub async fn wait_until_local_joined_cluster(
-        manager: &IronRaftClusterManager,
+        manager: &IronClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
         leader_id: u64,
     ) -> Result<(), Box<dyn Error>> {
@@ -399,7 +402,7 @@ impl IronRaftClusterManagerSupport {
 
     // 初始化只包含当前节点的最小 Raft 集群。
     pub async fn initialize_minimal_cluster(
-        manager: &IronRaftClusterManager,
+        manager: &IronClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(), Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);
@@ -416,7 +419,7 @@ impl IronRaftClusterManagerSupport {
 
     // 等待当前节点成为领导节点(leader)。
     pub async fn wait_until_leader(
-        manager: &IronRaftClusterManager,
+        manager: &IronClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(), Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);
@@ -447,10 +450,10 @@ impl IronRaftClusterManagerSupport {
 
     // 将单个注册节点加入集群。
     pub async fn join_one_boot_node(
-        manager: &IronRaftClusterManager,
+        manager: &IronClusterManager,
         raft: &Raft<IronRaftTypeConfig>,
         target_id: u64,
-        target_node: &IronRaftNode,
+        target_node: &IronClusterNode,
     ) -> Result<bool, Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);
         let peer_tag = peer_node_tag(target_id);

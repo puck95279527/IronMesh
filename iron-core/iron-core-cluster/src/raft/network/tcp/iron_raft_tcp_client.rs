@@ -25,8 +25,8 @@ use tokio::sync::mpsc;
 
 use crate::raft::iron_raft_constants::CLIENT_WRITE_TIMEOUT;
 use crate::raft::iron_raft_constants::JOIN_NODE_TIMEOUT;
+use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::command::iron_raft_request::IronRaftRequest;
-use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotNode;
@@ -213,7 +213,7 @@ impl IronRaftTcpClient {
     pub async fn client_write(
         &self,
         request: IronRaftRequest,
-    ) -> Result<IronRaftResponse, std::io::Error> {
+    ) -> Result<IronClusterWriteResponse, std::io::Error> {
         let request = IronRaftTcpRpcRequest::ClientWrite(request);
 
         match tokio::time::timeout(CLIENT_WRITE_TIMEOUT, self.send_request_with_retry(request))

@@ -4,9 +4,7 @@ mod support;
 use std::sync::Arc;
 
 // 打印当前节点本地集群业务数据大小。
-async fn log_local_cluster_data_size(
-    cluster_handle: &iron_core_cluster::IronClusterHandle,
-) {
+async fn log_local_cluster_data_size(cluster_handle: &iron_core_cluster::IronClusterHandle) {
     let state_machine_data = cluster_handle.local_state_machine_data().await;
     tracing::debug!(
         target: "iron_zenith_cluster_lab",
@@ -16,9 +14,7 @@ async fn log_local_cluster_data_size(
 }
 
 // 启动当前节点本地集群业务数据大小日志任务。
-fn spawn_local_cluster_data_size_logger(
-    cluster_handle: Arc<iron_core_cluster::IronClusterHandle>,
-) {
+fn spawn_local_cluster_data_size_logger(cluster_handle: Arc<iron_core_cluster::IronClusterHandle>) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
         loop {
@@ -30,12 +26,12 @@ fn spawn_local_cluster_data_size_logger(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use iron_core_cluster::IronRaftClusterManager;
+    use iron_core_cluster::IronClusterManager;
     use support::cluster_data_writer::write_current_node_cluster_data;
     use support::cluster_logging::init_cluster_process_logging;
 
     init_cluster_process_logging()?;
-    let cluster_manager = IronRaftClusterManager::add_learner("127.0.0.1")?;
+    let cluster_manager = IronClusterManager::add_learner("127.0.0.1")?;
 
     let cluster_handle = Arc::new(cluster_manager.start().await?);
     let node_id = cluster_handle.current_node_id();

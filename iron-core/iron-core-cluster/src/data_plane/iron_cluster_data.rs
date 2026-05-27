@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::data_plane::iron_cluster_data_command::IronClusterDataCommand;
-use crate::raft::model::command::iron_raft_response::IronRaftResponse;
+use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 
 // IronMesh 集群业务数据模型。
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
@@ -11,11 +11,14 @@ pub struct IronClusterData {
 
 impl IronClusterData {
     // 应用集群数据写命令。
-    pub(crate) fn apply_command(&mut self, command: IronClusterDataCommand) -> IronRaftResponse {
+    pub(crate) fn apply_command(
+        &mut self,
+        command: IronClusterDataCommand,
+    ) -> IronClusterWriteResponse {
         match command {
             IronClusterDataCommand::Set { key, value } => {
                 self.values.insert(key, value.clone());
-                IronRaftResponse { value: Some(value) }
+                IronClusterWriteResponse { value: Some(value) }
             }
         }
     }

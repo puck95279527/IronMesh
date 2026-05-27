@@ -1,45 +1,45 @@
-// Raft 节点角色。
+// 集群节点角色。
 #[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum IronRaftNodeRole {
+pub enum IronClusterNodeRole {
     // 投票节点，用于参与 Raft 投票。
     Voter,
     // 学习节点，用于作为 learner 加入集群。
     Learner,
 }
 
-// IronMesh Raft 节点。
+// IronMesh 集群节点。
 #[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct IronRaftNode {
-    // Raft 节点 ID。
+pub struct IronClusterNode {
+    // 集群节点 ID。
     pub node_id: u64,
-    // Raft 节点对外公布 IP，用于写入 membership 并让其他节点连接。
+    // 集群节点对外公布 IP，用于写入 membership 并让其他节点连接。
     pub advertise_node_ip: String,
-    // Raft 节点通信端口，为空时由操作系统分配本地可用端口。
+    // 集群节点通信端口，为空时由操作系统分配本地可用端口。
     pub node_port: Option<u16>,
-    // Raft 节点调试 HTTP 地址。
+    // 集群节点调试 HTTP 地址。
     pub http_debug_addr: Option<String>,
-    // Raft 节点是否为唯一首次起盘节点。
+    // 集群节点是否为唯一首次起盘节点。
     pub is_boot_node: bool,
-    // Raft 节点角色。
-    pub node_role: IronRaftNodeRole,
+    // 集群节点角色。
+    pub node_role: IronClusterNodeRole,
 }
 
-impl IronRaftNode {
-    // 创建 Raft 节点配置。
+impl IronClusterNode {
+    // 创建集群节点配置。
     pub(crate) fn new(
         node_id: u64,
         advertise_node_ip: impl Into<String>,
         node_port: Option<u16>,
         http_debug_addr: Option<String>,
-        node_role: IronRaftNodeRole,
+        node_role: IronClusterNodeRole,
     ) -> Self {
         Self {
             node_id,
             advertise_node_ip: advertise_node_ip.into(),
             node_port,
             http_debug_addr,
-            is_boot_node: matches!(node_role, IronRaftNodeRole::Voter),
+            is_boot_node: matches!(node_role, IronClusterNodeRole::Voter),
             node_role,
         }
     }
