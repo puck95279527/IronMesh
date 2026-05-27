@@ -61,7 +61,7 @@ where
         StorageError<u64>,
     > {
         Ok((
-            self.last_applied_log.lock().await.clone(),
+            *self.last_applied_log.lock().await,
             self.last_membership.lock().await.clone(),
         ))
     }
@@ -75,11 +75,11 @@ where
         let mut responses = Vec::new();
 
         for entry in entries {
-            *self.last_applied_log.lock().await = Some(entry.log_id.clone());
+            *self.last_applied_log.lock().await = Some(entry.log_id);
 
             if let Some(membership) = entry.get_membership() {
                 *self.last_membership.lock().await =
-                    openraft::StoredMembership::new(Some(entry.log_id.clone()), membership.clone());
+                    openraft::StoredMembership::new(Some(entry.log_id), membership.clone());
             }
 
             let response = match entry.payload {
@@ -123,7 +123,7 @@ where
                 ),
             })?;
 
-        *self.last_applied_log.lock().await = meta.last_log_id.clone();
+        *self.last_applied_log.lock().await = meta.last_log_id;
         *self.last_membership.lock().await = meta.last_membership.clone();
         *self.state_machine.lock().await = state_machine_data;
         *self.current_snapshot.lock().await = Some(IronRaftStoredSnapshot {
@@ -167,7 +167,7 @@ where
         let mut snapshot_idx = self.snapshot_idx.lock().await;
         *snapshot_idx += 1;
 
-        let last_applied_log = self.last_applied_log.lock().await.clone();
+        let last_applied_log = *self.last_applied_log.lock().await;
         let last_membership = self.last_membership.lock().await.clone();
 
         let snapshot_id = match &last_applied_log {

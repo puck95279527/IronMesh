@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::io::{Error as IoError, ErrorKind};
+use std::io::Error as IoError;
 use std::sync::Arc;
 
 use openraft::Raft;
@@ -73,13 +73,11 @@ where
     pub(crate) async fn wait_shutdown(&self) -> Result<(), Box<dyn Error>> {
         let mut tasks = self.tasks.lock().await;
         match tasks.join_next().await {
-            Some(Ok(())) => Err(IoError::new(ErrorKind::Other, "Raft 后台任务已退出").into()),
-            Some(Err(error)) => Err(IoError::new(
-                ErrorKind::Other,
-                format!("Raft 后台任务执行失败: {error}"),
-            )
-            .into()),
-            None => Err(IoError::new(ErrorKind::Other, "Raft 后台任务集合为空").into()),
+            Some(Ok(())) => Err(IoError::other("Raft 后台任务已退出").into()),
+            Some(Err(error)) => {
+                Err(IoError::other(format!("Raft 后台任务执行失败: {error}")).into())
+            }
+            None => Err(IoError::other("Raft 后台任务集合为空").into()),
         }
     }
 }

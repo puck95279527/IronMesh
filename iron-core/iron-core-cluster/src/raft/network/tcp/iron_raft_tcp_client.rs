@@ -231,7 +231,7 @@ where
             Ok(result) => match result? {
                 IronRaftTcpRpcResponse::ClientWrite(Ok(response)) => Ok(response),
                 IronRaftTcpRpcResponse::ClientWrite(Err(error)) => {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, error))
+                    Err(std::io::Error::other(error))
                 }
                 _ => Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -252,9 +252,7 @@ where
         match tokio::time::timeout(JOIN_NODE_TIMEOUT, self.send_request_with_retry(request)).await {
             Ok(result) => match result? {
                 IronRaftTcpRpcResponse::JoinNode(Ok(())) => Ok(()),
-                IronRaftTcpRpcResponse::JoinNode(Err(error)) => {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, error))
-                }
+                IronRaftTcpRpcResponse::JoinNode(Err(error)) => Err(std::io::Error::other(error)),
                 _ => Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "unexpected tcp response kind",

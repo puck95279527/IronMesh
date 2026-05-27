@@ -3,7 +3,7 @@
 node_id = 1
 advertise_node_ip = "127.0.0.1"
 node_port = 5001
-http_debug_addr = "127.0.0.1:7101"
+http_debug_addr = "0.0.0.0:7101"
 is_boot_node = true
 
 [[IronClusterNode]]

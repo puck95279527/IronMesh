@@ -12,24 +12,6 @@ use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // 启动 Raft 查询 HTTP 服务。
-#[allow(dead_code)]
-pub async fn start_query_http<S>(
-    node_id: u64,
-    query_port: u16,
-    raft: Raft<IronRaftTypeConfig<S>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-where
-    S: IronRaftStateMachineData,
-{
-    if query_port == 0 {
-        return Ok(());
-    }
-
-    let query_addr = format!("127.0.0.1:{query_port}");
-    start_query_http_with_addr(node_id, query_addr, raft).await
-}
-
-// 启动 Raft 查询 HTTP 服务。
 pub async fn start_query_http_with_addr<S>(
     node_id: u64,
     query_addr: String,

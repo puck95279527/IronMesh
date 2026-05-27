@@ -451,7 +451,7 @@ impl IronClusterManagerSupport {
             .state(ServerState::Leader, "等待起盘节点成为 leader")
             .await
         {
-            return Err(IoError::new(ErrorKind::Other, error.to_string()).into());
+            return Err(IoError::other(error.to_string()).into());
         }
         tracing::info!(%self_tag, "[Iron] [cluster] 已确认当前节点成为领导节点(leader)");
         Ok(())

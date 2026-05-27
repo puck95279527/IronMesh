@@ -56,7 +56,7 @@ where
                         "not_used",
                         self.current_node.node_id,
                     )),
-                    Err(error) => Err(IronClusterWriteError::LocalWrite(error)),
+                    Err(error) => Err(IronClusterWriteError::LocalWrite(Box::new(error))),
                 }
             } else {
                 match Self::find_leader_node(&metrics) {

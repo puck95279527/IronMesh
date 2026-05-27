@@ -71,12 +71,12 @@ where
         &mut self,
     ) -> Result<LogState<IronRaftTypeConfig<S>>, StorageError<u64>> {
         let logs = self.logs.lock().await;
-        let last_purged_log_id = self.last_purged_log_id.lock().await.clone();
+        let last_purged_log_id = *self.last_purged_log_id.lock().await;
         let last_log_id = logs
             .iter()
             .next_back()
-            .map(|(_, entry)| entry.log_id.clone())
-            .or_else(|| last_purged_log_id.clone());
+            .map(|(_, entry)| entry.log_id)
+            .or(last_purged_log_id);
 
         Ok(LogState {
             last_purged_log_id,
@@ -91,13 +91,13 @@ where
 
     // 保存投票状态。
     async fn save_vote(&mut self, vote: &openraft::Vote<u64>) -> Result<(), StorageError<u64>> {
-        *self.vote.lock().await = Some(vote.clone());
+        *self.vote.lock().await = Some(*vote);
         Ok(())
     }
 
     // 读取当前保存的投票状态。
     async fn read_vote(&mut self) -> Result<Option<openraft::Vote<u64>>, StorageError<u64>> {
-        Ok(self.vote.lock().await.clone())
+        Ok(*self.vote.lock().await)
     }
 
     // 保存提交位置。
@@ -111,7 +111,7 @@ where
 
     // 读取提交位置。
     async fn read_committed(&mut self) -> Result<Option<openraft::LogId<u64>>, StorageError<u64>> {
-        Ok(self.committed.lock().await.clone())
+        Ok(*self.committed.lock().await)
     }
 
     // 追加日志。
@@ -149,7 +149,7 @@ where
 
     // 清理指定日志及之前的日志。
     async fn purge(&mut self, log_id: openraft::LogId<u64>) -> Result<(), StorageError<u64>> {
-        *self.last_purged_log_id.lock().await = Some(log_id.clone());
+        *self.last_purged_log_id.lock().await = Some(log_id);
 
         let mut logs = self.logs.lock().await;
         let keys = logs

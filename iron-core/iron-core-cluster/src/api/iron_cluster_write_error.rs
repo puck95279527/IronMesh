@@ -12,9 +12,11 @@ pub enum IronClusterWriteError {
     },
     // leader 本地写入失败。
     LocalWrite(
-        openraft::error::RaftError<
-            u64,
-            openraft::error::ClientWriteError<u64, openraft::BasicNode>,
+        Box<
+            openraft::error::RaftError<
+                u64,
+                openraft::error::ClientWriteError<u64, openraft::BasicNode>,
+            >,
         >,
     ),
     // 非 leader 向 leader 转发写入超时。
@@ -95,7 +97,7 @@ impl Error for IronClusterWriteError {
     // 返回底层错误来源。
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::LocalWrite(error) => Some(error),
+            Self::LocalWrite(error) => Some(error.as_ref()),
             _ => None,
         }
     }

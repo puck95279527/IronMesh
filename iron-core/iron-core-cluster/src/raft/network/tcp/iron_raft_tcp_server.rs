@@ -196,7 +196,7 @@ where
             })
             .collect::<BTreeMap<_, _>>();
         let membership = Membership::new(voters, nodes);
-        let stored_membership = StoredMembership::new(last_log_id.clone(), membership);
+        let stored_membership = StoredMembership::new(last_log_id, membership);
 
         SnapshotMeta {
             last_log_id,
