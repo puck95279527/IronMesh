@@ -66,8 +66,8 @@ impl IronClusterRuntime {
         self.write_router.write_cluster_data(command).await
     }
 
-    // 等待后台任务退出，供实际服务进程显式阻塞使用。
-    pub(crate) async fn wait_forever(&self) -> Result<(), Box<dyn Error>> {
+    // 等待集群后台任务结束或失败。
+    pub(crate) async fn wait_shutdown(&self) -> Result<(), Box<dyn Error>> {
         let mut tasks = self.tasks.lock().await;
         match tasks.join_next().await {
             Some(Ok(())) => Err(IoError::new(ErrorKind::Other, "Raft 后台任务已退出").into()),

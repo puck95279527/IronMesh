@@ -1,4 +1,4 @@
-# iron-core-cluster
+﻿# iron-core-cluster
 
 `iron-core-cluster` 是 IronMesh 的集群控制面核心库，负责集群起盘、节点加入、Raft 选主、Raft TCP 通信、集群业务数据写入转发、本地状态读取和调试查询。
 
@@ -38,7 +38,7 @@
 
 | 项目 | 说明 |
 |---|---|
-| 服务壳阻塞 | 外层启动壳通过 `wait_forever()` 决定是否常驻运行。 |
+| 服务壳阻塞 | 外层启动壳通过 `wait_shutdown()` 决定是否常驻运行。 |
 | lab 验证入口 | 固定本机端口的集群启动器放在 `iron-zenith-lab/iron-zenith-cluster-lab`。 |
 | 查询入口 | `/health` 用于健康检查，`/raft/metrics` 返回 OpenRaft 原始 metrics。 |
 | learner 移除验证 | 本机启动 `reg1/reg2/reg3/gate5` 后，停止 `gate5`，leader 应将节点 5 从 membership 移除。 |

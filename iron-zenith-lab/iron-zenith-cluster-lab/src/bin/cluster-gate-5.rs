@@ -18,5 +18,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             value: format!("{node_id}|{node_addr}|normal"),
         })
         .await?;
-    cluster_handler.wait_forever().await
+    cluster_handler.wait_shutdown().await
 }

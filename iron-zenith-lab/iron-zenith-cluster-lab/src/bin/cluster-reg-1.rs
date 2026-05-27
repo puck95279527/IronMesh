@@ -16,5 +16,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             value: "1|127.0.0.1:5001|boot".to_string(),
         })
         .await?;
-    cluster_handler.wait_forever().await
+    cluster_handler.wait_shutdown().await
 }

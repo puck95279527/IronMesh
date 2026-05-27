@@ -94,9 +94,4 @@ impl IronClusterManagerCore {
             tasks,
         ))
     }
-
-    // 启动当前节点并由调用方显式阻塞等待后台任务。
-    pub(crate) async fn run(self) -> Result<(), Box<dyn Error>> {
-        self.start().await?.wait_forever().await
-    }
 }
