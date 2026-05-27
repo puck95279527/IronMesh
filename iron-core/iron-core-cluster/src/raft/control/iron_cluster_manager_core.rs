@@ -6,6 +6,7 @@ use crate::control_plane::iron_cluster_runtime::IronClusterRuntime;
 use crate::raft::control::iron_cluster_manager_flow::IronClusterManagerFlow;
 use crate::raft::control::iron_cluster_manager_support::IronClusterManagerSupport;
 use crate::raft::control::iron_cluster_node::{IronClusterNode, IronClusterNodeRole};
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::utils::iron_snowflake_id::IronSnowflakeIdGenerator;
 
 // IronMesh 集群管理器。
@@ -61,13 +62,16 @@ impl IronClusterManagerCore {
     }
 
     // 启动当前节点，等待其完成起盘或加入集群后返回运行句柄。
-    pub(crate) async fn start(mut self) -> Result<IronClusterRuntime, Box<dyn Error>> {
+    pub(crate) async fn start<S>(mut self) -> Result<IronClusterRuntime<S>, Box<dyn Error>>
+    where
+        S: IronRaftStateMachineData,
+    {
         // 阶段 1：校验当前节点、注册节点表和唯一首次起盘节点。
         IronClusterManagerFlow::validate_topology(&self)?;
 
         // 阶段 2：先绑定 TCP 端口，再创建 Raft 实例、TCP 服务和本节点运行所需的基础对象。
         let (raft, tcp_server, tcp_listener, state_machine_store, network_event_receiver) =
-            IronClusterManagerFlow::build_raft_runtime(&mut self).await?;
+            IronClusterManagerFlow::build_raft_runtime::<S>(&mut self).await?;
 
         // 阶段 3：启动长期运行的后台服务，让节点在加入集群前已经具备对外通信能力。
         let tasks = IronClusterManagerFlow::spawn_runtime_services(
@@ -80,11 +84,11 @@ impl IronClusterManagerCore {
 
         // 阶段 4：先尝试加入已有集群；只有唯一起盘节点允许初始化新集群。
         let bootstrap_owner =
-            IronClusterManagerFlow::bootstrap_or_join_cluster(&self, &raft).await?;
+            IronClusterManagerFlow::bootstrap_or_join_cluster::<S>(&self, &raft).await?;
 
         if bootstrap_owner {
             // 阶段 5：只有首次起盘节点负责把剩余注册节点逐个加入为 voter。
-            IronClusterManagerFlow::join_remaining_boot_nodes(&self, &raft).await?;
+            IronClusterManagerFlow::join_remaining_boot_nodes::<S>(&self, &raft).await?;
         }
 
         Ok(IronClusterRuntime::new(

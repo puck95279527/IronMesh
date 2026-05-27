@@ -7,24 +7,29 @@ use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::raft::control::iron_cluster_node::IronClusterNode;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_LIMIT;
-use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
-use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh 集群写入路由器。
-pub(crate) struct IronClusterWriteRouter {
+pub(crate) struct IronClusterWriteRouter<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 当前集群节点信息，用于判断本地节点是否为 leader。
     current_node: IronClusterNode,
     // Raft 节点句柄，用于本地 leader 写入。
-    raft: Raft<IronRaftTypeConfig>,
+    raft: Raft<IronRaftTypeConfig<S>>,
     // 当前节点到 leader 的业务写入 TCP 客户端缓存。
-    leader_write_client: Arc<tokio::sync::Mutex<Option<IronRaftTcpClient>>>,
+    leader_write_client: Arc<tokio::sync::Mutex<Option<IronRaftTcpClient<S>>>>,
 }
 
-impl IronClusterWriteRouter {
+impl<S> IronClusterWriteRouter<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 创建集群写入路由器。
-    pub(crate) fn new(current_node: IronClusterNode, raft: Raft<IronRaftTypeConfig>) -> Self {
+    pub(crate) fn new(current_node: IronClusterNode, raft: Raft<IronRaftTypeConfig<S>>) -> Self {
         Self {
             current_node,
             raft,
@@ -35,26 +40,16 @@ impl IronClusterWriteRouter {
     // 写入集群业务数据。
     pub(crate) async fn write_cluster_data(
         &self,
-        request: IronClusterWriteRequest,
-    ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
-        let (action, key, value) = match &request {
-            IronClusterWriteRequest::Insert(value) => {
-                ("insert", value.id, Some(value.clone()))
-            }
-            IronClusterWriteRequest::Update(value) => {
-                ("update", value.id, Some(value.clone()))
-            }
-            IronClusterWriteRequest::Delete(key) => ("delete", *key, None),
-        };
+        request: S::WriteRequest,
+    ) -> Result<S::WriteResponse, IronClusterWriteError> {
         let mut last_error = None;
 
         for attempt in 1..=CLUSTER_WRITE_RETRY_LIMIT {
-            let request = request.clone();
+            let request_for_log = request.clone();
             let metrics = self.raft.metrics().borrow().clone();
 
             let result = if metrics.current_leader == Some(self.current_node.node_id) {
-                match self.raft.client_write(request).await
-                {
+                match self.raft.client_write(request.clone()).await {
                     Ok(response) => Ok((
                         response.data,
                         "local_leader",
@@ -68,7 +63,7 @@ impl IronClusterWriteRouter {
                     Ok((leader_id, leader_addr)) => {
                         let (client, connection_state) =
                             self.leader_write_client(leader_id, &leader_addr).await;
-                        match client.client_write(request).await {
+                        match client.client_write(request.clone()).await {
                             Ok(response) => {
                                 Ok((response, "forward_to_leader", connection_state, leader_id))
                             }
@@ -123,9 +118,7 @@ impl IronClusterWriteRouter {
                         write_path,
                         connection_state,
                         leader_id,
-                        action,
-                        key = %key,
-                        value = ?value,
+                        request = ?request_for_log,
                         attempt,
                         "[Iron] [cluster-data] 集群业务数据写入成功"
                     );
@@ -134,9 +127,7 @@ impl IronClusterWriteRouter {
                 }
                 Err(error) if attempt < CLUSTER_WRITE_RETRY_LIMIT => {
                     tracing::warn!(
-                        action,
-                        key = %key,
-                        value = ?value,
+                        request = ?request_for_log,
                         attempt,
                         %error,
                         "[Iron] [cluster-data] 集群业务数据写入失败，准备重新读取 leader 后重试"
@@ -158,7 +149,7 @@ impl IronClusterWriteRouter {
         &self,
         leader_id: u64,
         leader_addr: &str,
-    ) -> (IronRaftTcpClient, &'static str) {
+    ) -> (IronRaftTcpClient<S>, &'static str) {
         let mut guard = self.leader_write_client.lock().await;
         match guard.as_ref() {
             Some(client)
@@ -173,6 +164,7 @@ impl IronClusterWriteRouter {
                     target_addr: leader_addr.to_string(),
                     cached_stream: Arc::new(tokio::sync::Mutex::new(None)),
                     event_sender: None,
+                    marker: std::marker::PhantomData,
                 };
                 *guard = Some(client.clone());
                 (client, connection_state)

@@ -19,6 +19,7 @@ use crate::raft::network::iron_raft_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::iron_raft_network_factory::IronRaftNetworkFactory;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::storage::iron_raft_log_store::IronRaftLogStore;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineStore;
 
 // IronMesh Raft 集群启动主流程。
@@ -88,18 +89,21 @@ impl IronClusterManagerFlow {
     }
 
     // 阶段 2：先绑定当前节点 TCP 端口，再创建 Raft 实例和 TCP 服务对象，确保后续写入 membership 的地址已经可用。
-    pub(crate) async fn build_raft_runtime(
+    pub(crate) async fn build_raft_runtime<S>(
         manager: &mut IronClusterManagerCore,
     ) -> Result<
         (
-            Raft<IronRaftTypeConfig>,
-            IronRaftTcpServer,
+            Raft<IronRaftTypeConfig<S>>,
+            IronRaftTcpServer<S>,
             TcpListener,
-            IronRaftStateMachineStore,
+            IronRaftStateMachineStore<S>,
             mpsc::Receiver<IronRaftNetworkEvent>,
         ),
         Box<dyn Error>,
-    > {
+    >
+    where
+        S: IronRaftStateMachineData,
+    {
         // 先 bind 才能保证端口属于当前进程；learner 使用 0 端口时，这一步会解析出真实随机端口。
         let bind_addr = manager.current_node.bind_addr();
         let tcp_listener = TcpListener::bind(&bind_addr).await?;
@@ -112,13 +116,13 @@ impl IronClusterManagerFlow {
         // Raft 运行时必须使用已经确定的 node_id；网络工厂会在复制失败时把断线事件送回管理流程。
         let config = IronClusterManagerSupport::build_raft_config()?;
         let node_id = manager.current_node.node_id;
-        let state_machine_store = IronRaftStateMachineStore::default();
+        let state_machine_store = IronRaftStateMachineStore::<S>::default();
         let (network_event_sender, network_event_receiver) = mpsc::channel(1024);
-        let raft = Raft::<IronRaftTypeConfig>::new(
+        let raft = Raft::<IronRaftTypeConfig<S>>::new(
             node_id,
             config,
-            IronRaftNetworkFactory::new(network_event_sender),
-            IronRaftLogStore::default(),
+            IronRaftNetworkFactory::<S>::new(network_event_sender),
+            IronRaftLogStore::<S>::default(),
             state_machine_store.clone(),
         )
         .await?;
@@ -139,20 +143,23 @@ impl IronClusterManagerFlow {
     }
 
     // 阶段 3：用阶段 2 已经绑定好的 TCP listener 启动当前节点的后台运行服务，确保 join 前节点已经能被连接。
-    pub(crate) fn spawn_runtime_services(
+    pub(crate) fn spawn_runtime_services<S>(
         manager: &IronClusterManagerCore,
-        raft: Raft<IronRaftTypeConfig>,
-        tcp_server: IronRaftTcpServer,
+        raft: Raft<IronRaftTypeConfig<S>>,
+        tcp_server: IronRaftTcpServer<S>,
         tcp_listener: TcpListener,
         network_event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
-    ) -> JoinSet<()> {
+    ) -> JoinSet<()>
+    where
+        S: IronRaftStateMachineData,
+    {
         let mut tasks = JoinSet::new();
         // Raft TCP 服务必须最先进入后台任务，后续 join 成功后 leader 会立刻尝试复制日志到本节点。
-        IronClusterManagerSupport::spawn_raft_tcp_server(&mut tasks, tcp_server, tcp_listener);
+        IronClusterManagerSupport::spawn_raft_tcp_server::<S>(&mut tasks, tcp_server, tcp_listener);
         // 调试 HTTP 只用于人工查询，不参与集群控制面决策。
-        IronClusterManagerSupport::spawn_debug_http(&mut tasks, manager, raft.clone());
+        IronClusterManagerSupport::spawn_debug_http::<S>(&mut tasks, manager, raft.clone());
         // 断线移除任务只在当前节点成为 leader 时生效，用来清理不可达 learner。
-        IronClusterManagerSupport::spawn_learner_disconnect_remover(
+        IronClusterManagerSupport::spawn_learner_disconnect_remover::<S>(
             &mut tasks,
             raft,
             network_event_receiver,
@@ -161,10 +168,13 @@ impl IronClusterManagerFlow {
     }
 
     // 阶段 4：先尝试加入已有集群；只有唯一起盘节点允许初始化新集群。
-    pub async fn bootstrap_or_join_cluster(
+    pub async fn bootstrap_or_join_cluster<S>(
         manager: &IronClusterManagerCore,
-        raft: &Raft<IronRaftTypeConfig>,
-    ) -> Result<bool, Box<dyn Error>> {
+        raft: &Raft<IronRaftTypeConfig<S>>,
+    ) -> Result<bool, Box<dyn Error>>
+    where
+        S: IronRaftStateMachineData,
+    {
         let self_tag = self_node_tag(manager.current_node.node_id);
         let many_tag = other_nodes_tag(
             manager.current_node.node_id,
@@ -177,7 +187,7 @@ impl IronClusterManagerFlow {
         loop {
             // 所有节点都先尝试加入已有集群，避免起盘节点重启时误判为需要重新 initialize。
             let (joined_existing_cluster, saw_peer) =
-                IronClusterManagerSupport::try_join_existing_cluster(manager, raft).await?;
+                IronClusterManagerSupport::try_join_existing_cluster::<S>(manager, raft).await?;
             if joined_existing_cluster {
                 return Ok(false);
             }
@@ -196,7 +206,7 @@ impl IronClusterManagerFlow {
             // 只有唯一的起盘节点在看不到可加入集群时，才允许初始化只包含自己的最小集群。
             tracing::info!(%self_tag, "[Iron] [cluster] 当前节点是起盘节点，准备初始化集群");
             if let Err(error) =
-                IronClusterManagerSupport::initialize_minimal_cluster(manager, raft).await
+                IronClusterManagerSupport::initialize_minimal_cluster::<S>(manager, raft).await
             {
                 tracing::warn!(%self_tag, %error, "[Iron] [cluster] 初始化 Raft 集群失败");
                 tokio::time::sleep(CLUSTER_STARTUP_ERROR_RETRY_INTERVAL).await;
@@ -210,10 +220,13 @@ impl IronClusterManagerFlow {
     }
 
     // 阶段 5：如果当前节点完成起盘，就把其他注册节点逐个加入为 voter。
-    pub async fn join_remaining_boot_nodes(
+    pub async fn join_remaining_boot_nodes<S>(
         manager: &IronClusterManagerCore,
-        raft: &Raft<IronRaftTypeConfig>,
-    ) -> Result<(), Box<dyn Error>> {
+        raft: &Raft<IronRaftTypeConfig<S>>,
+    ) -> Result<(), Box<dyn Error>>
+    where
+        S: IronRaftStateMachineData,
+    {
         let self_tag = self_node_tag(manager.current_node.node_id);
         let many_tag = other_nodes_tag(
             manager.current_node.node_id,
@@ -221,7 +234,7 @@ impl IronClusterManagerFlow {
         );
 
         // 注册节点提升为 voter 前必须确认当前节点已经是 leader，否则 membership 变更会被拒绝。
-        IronClusterManagerSupport::wait_until_leader(manager, raft).await?;
+        IronClusterManagerSupport::wait_until_leader::<S>(manager, raft).await?;
         tracing::info!(
             %self_tag,
             %many_tag,
@@ -236,8 +249,13 @@ impl IronClusterManagerFlow {
             }
 
             // 每个注册节点先作为 learner 追日志，再提升为 voter，避免未同步节点直接参与投票。
-            if IronClusterManagerSupport::join_one_boot_node(manager, raft, *target_id, target_node)
-                .await?
+            if IronClusterManagerSupport::join_one_boot_node::<S>(
+                manager,
+                raft,
+                *target_id,
+                target_node,
+            )
+            .await?
             {
                 did_progress = true;
             }

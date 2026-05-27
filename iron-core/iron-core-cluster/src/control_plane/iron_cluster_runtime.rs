@@ -7,31 +7,35 @@ use tokio::task::JoinSet;
 
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::control_plane::iron_cluster_write_router::IronClusterWriteRouter;
-use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::control::iron_cluster_node::IronClusterNode;
-use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
-use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineStore;
 
 // IronMesh 集群运行时。
-pub(crate) struct IronClusterRuntime {
+pub(crate) struct IronClusterRuntime<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 当前集群节点信息，用于对外 API 记录操作来源。
     current_node: IronClusterNode,
     // 当前节点本地状态机存储。
-    state_machine_store: IronRaftStateMachineStore,
+    state_machine_store: IronRaftStateMachineStore<S>,
     // 集群写入路由器。
-    write_router: IronClusterWriteRouter,
+    write_router: IronClusterWriteRouter<S>,
     // 当前集群节点托管的后台任务集合。
     tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
 }
 
-impl IronClusterRuntime {
+impl<S> IronClusterRuntime<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 创建集群运行时。
     pub(crate) fn new(
         current_node: IronClusterNode,
-        raft: Raft<IronRaftTypeConfig>,
-        state_machine_store: IronRaftStateMachineStore,
+        raft: Raft<IronRaftTypeConfig<S>>,
+        state_machine_store: IronRaftStateMachineStore<S>,
         tasks: JoinSet<()>,
     ) -> Self {
         Self {
@@ -43,7 +47,7 @@ impl IronClusterRuntime {
     }
 
     // 读取当前节点本地已经 apply 的状态机数据。
-    pub(crate) async fn local_state_machine_data(&self) -> IronClusterState {
+    pub(crate) async fn local_state_machine_data(&self) -> S {
         self.state_machine_store.state_machine.lock().await.clone()
     }
 
@@ -60,8 +64,8 @@ impl IronClusterRuntime {
     // 写入集群业务数据。
     pub(crate) async fn write_cluster_data(
         &self,
-        request: IronClusterWriteRequest,
-    ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
+        request: S::WriteRequest,
+    ) -> Result<S::WriteResponse, IronClusterWriteError> {
         self.write_router.write_cluster_data(request).await
     }
 

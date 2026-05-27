@@ -25,8 +25,6 @@ use tokio::sync::mpsc;
 
 use crate::raft::iron_raft_constants::CLIENT_WRITE_TIMEOUT;
 use crate::raft::iron_raft_constants::JOIN_NODE_TIMEOUT;
-use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
-use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotNode;
@@ -36,20 +34,28 @@ use crate::raft::network::iron_raft_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::tcp::iron_raft_tcp_frame::IronRaftTcpFrame;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // 节点加入 TCP RPC 超时时间。
 
 // IronMesh Raft TCP 客户端。
 #[derive(Debug, Clone)]
-pub struct IronRaftTcpClient {
+pub struct IronRaftTcpClient<S>
+where
+    S: IronRaftStateMachineData,
+{
     pub target_node_id: u64, // 目标节点标识。
     pub target_addr: String, // 目标节点 TCP 地址。
     pub cached_stream: Arc<Mutex<Option<tokio::net::TcpStream>>>, // 目标节点长连接缓存。
     pub(crate) event_sender: Option<mpsc::Sender<IronRaftNetworkEvent>>, // 可选的 TCP 连接事件发送器。
+    pub(crate) marker: std::marker::PhantomData<fn() -> S>,              // 状态机类型标记。
 }
 
 // OpenRaft 标准协议相关方法。
-impl IronRaftTcpClient {
+impl<S> IronRaftTcpClient<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 创建网络错误。
     fn network_error(
         error: &(impl std::error::Error + 'static),
@@ -147,8 +153,8 @@ impl IronRaftTcpClient {
     // 执行一次请求发送与响应读取。
     async fn send_request_once(
         &self,
-        request: &IronRaftTcpRpcRequest,
-    ) -> Result<IronRaftTcpRpcResponse, std::io::Error> {
+        request: &IronRaftTcpRpcRequest<S>,
+    ) -> Result<IronRaftTcpRpcResponse<S>, std::io::Error> {
         let mut guard = self.cached_stream.lock().await;
         if guard.is_none() {
             *guard = Some(self.connect_new_stream().await?);
@@ -160,7 +166,7 @@ impl IronRaftTcpClient {
             return Err(error);
         }
 
-        match IronRaftTcpFrame::read_json::<IronRaftTcpRpcResponse>(stream).await {
+        match IronRaftTcpFrame::read_json::<IronRaftTcpRpcResponse<S>>(stream).await {
             Ok(response) => Ok(response),
             Err(error) => {
                 *guard = None;
@@ -172,8 +178,8 @@ impl IronRaftTcpClient {
     // 发送请求并在失败后重连重试一次。
     async fn send_request_with_retry(
         &self,
-        request: IronRaftTcpRpcRequest,
-    ) -> Result<IronRaftTcpRpcResponse, std::io::Error> {
+        request: IronRaftTcpRpcRequest<S>,
+    ) -> Result<IronRaftTcpRpcResponse<S>, std::io::Error> {
         match self.send_request_once(&request).await {
             Ok(response) => Ok(response),
             Err(_) => match self.send_request_once(&request).await {
@@ -189,9 +195,9 @@ impl IronRaftTcpClient {
     // 按 soft_ttl 执行请求，超时时主动清理连接。
     async fn send_request_with_option(
         &self,
-        request: IronRaftTcpRpcRequest,
+        request: IronRaftTcpRpcRequest<S>,
         option: &openraft::network::RPCOption,
-    ) -> Result<IronRaftTcpRpcResponse, std::io::Error> {
+    ) -> Result<IronRaftTcpRpcResponse<S>, std::io::Error> {
         match tokio::time::timeout(option.soft_ttl(), self.send_request_with_retry(request)).await {
             Ok(result) => result,
             Err(_) => {
@@ -208,12 +214,15 @@ impl IronRaftTcpClient {
 }
 
 // IronMesh 自定义扩展协议相关方法。
-impl IronRaftTcpClient {
+impl<S> IronRaftTcpClient<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 请求目标节点执行客户端业务写入。
     pub async fn client_write(
         &self,
-        request: IronClusterWriteRequest,
-    ) -> Result<IronClusterWriteResponse, std::io::Error> {
+        request: S::WriteRequest,
+    ) -> Result<S::WriteResponse, std::io::Error> {
         let request = IronRaftTcpRpcRequest::ClientWrite(request);
 
         match tokio::time::timeout(CLIENT_WRITE_TIMEOUT, self.send_request_with_retry(request))
@@ -259,11 +268,14 @@ impl IronRaftTcpClient {
     }
 }
 
-impl RaftNetwork<IronRaftTypeConfig> for IronRaftTcpClient {
+impl<S> RaftNetwork<IronRaftTypeConfig<S>> for IronRaftTcpClient<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 发送追加日志请求。
     async fn append_entries(
         &mut self,
-        rpc: AppendEntriesRequest<IronRaftTypeConfig>,
+        rpc: AppendEntriesRequest<IronRaftTypeConfig<S>>,
         option: openraft::network::RPCOption,
     ) -> Result<AppendEntriesResponse<u64>, RPCError<u64, openraft::BasicNode, RaftError<u64>>>
     {
@@ -290,7 +302,7 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftTcpClient {
     // 发送安装快照请求。
     async fn install_snapshot(
         &mut self,
-        _rpc: InstallSnapshotRequest<IronRaftTypeConfig>,
+        _rpc: InstallSnapshotRequest<IronRaftTypeConfig<S>>,
         _option: openraft::network::RPCOption,
     ) -> Result<
         InstallSnapshotResponse<u64>,
@@ -333,10 +345,10 @@ impl RaftNetwork<IronRaftTypeConfig> for IronRaftTcpClient {
     async fn full_snapshot(
         &mut self,
         vote: Vote<u64>,
-        snapshot: Snapshot<IronRaftTypeConfig>,
+        snapshot: Snapshot<IronRaftTypeConfig<S>>,
         _cancel: impl std::future::Future<Output = ReplicationClosed> + OptionalSend + 'static,
         option: openraft::network::RPCOption,
-    ) -> Result<SnapshotResponse<u64>, StreamingError<IronRaftTypeConfig, Fatal<u64>>> {
+    ) -> Result<SnapshotResponse<u64>, StreamingError<IronRaftTypeConfig<S>, Fatal<u64>>> {
         let snapshot_meta = Self::build_snapshot_meta(&snapshot.meta);
         let snapshot_bytes = (*snapshot.snapshot).into_inner();
         let full_snapshot_request = IronRaftFullSnapshotRequest {

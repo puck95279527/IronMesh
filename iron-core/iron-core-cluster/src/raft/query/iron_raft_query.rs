@@ -9,14 +9,18 @@ use openraft::RaftMetrics;
 
 use crate::raft::iron_raft_log_tag::self_tag as self_node_tag;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // 启动 Raft 查询 HTTP 服务。
 #[allow(dead_code)]
-pub async fn start_query_http(
+pub async fn start_query_http<S>(
     node_id: u64,
     query_port: u16,
-    raft: Raft<IronRaftTypeConfig>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    raft: Raft<IronRaftTypeConfig<S>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    S: IronRaftStateMachineData,
+{
     if query_port == 0 {
         return Ok(());
     }
@@ -26,18 +30,21 @@ pub async fn start_query_http(
 }
 
 // 启动 Raft 查询 HTTP 服务。
-pub async fn start_query_http_with_addr(
+pub async fn start_query_http_with_addr<S>(
     node_id: u64,
     query_addr: String,
-    raft: Raft<IronRaftTypeConfig>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    raft: Raft<IronRaftTypeConfig<S>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    S: IronRaftStateMachineData,
+{
     if query_addr.is_empty() {
         return Ok(());
     }
 
     let router = Router::new()
         .route("/health", get(health_handler))
-        .route("/raft/metrics", get(metrics_handler))
+        .route("/raft/metrics", get(metrics_handler::<S>))
         .with_state(raft);
 
     let addr = query_addr.parse::<SocketAddr>()?;
@@ -60,8 +67,11 @@ pub async fn health_handler() -> &'static str {
 }
 
 // 查询 Raft 指标。
-pub async fn metrics_handler(
-    State(raft): State<Raft<IronRaftTypeConfig>>,
-) -> Json<RaftMetrics<u64, openraft::BasicNode>> {
+pub async fn metrics_handler<S>(
+    State(raft): State<Raft<IronRaftTypeConfig<S>>>,
+) -> Json<RaftMetrics<u64, openraft::BasicNode>>
+where
+    S: IronRaftStateMachineData,
+{
     Json(raft.metrics().borrow().clone())
 }

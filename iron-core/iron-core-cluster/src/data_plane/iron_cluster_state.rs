@@ -15,8 +15,8 @@ impl IronClusterState {
     // 应用集群数据写命令。
     pub(crate) fn apply_cluster_data_command(
         &mut self,
-        request: IronClusterWriteRequest,
-    ) -> IronClusterWriteResponse {
+        request: IronClusterWriteRequest<u64, IronCat>,
+    ) -> IronClusterWriteResponse<IronCat> {
         match request {
             IronClusterWriteRequest::Insert(value) => {
                 let key = value.id;
@@ -78,11 +78,11 @@ impl IronClusterState {
 }
 
 impl IronRaftStateMachineData for IronClusterState {
+    type WriteRequest = IronClusterWriteRequest<u64, IronCat>;
+    type WriteResponse = IronClusterWriteResponse<IronCat>;
+
     // 应用 Raft 写入请求到默认集群状态机。
-    fn apply_raft_request(
-        &mut self,
-        request: IronClusterWriteRequest,
-    ) -> IronClusterWriteResponse {
+    fn apply_raft_request(&mut self, request: Self::WriteRequest) -> Self::WriteResponse {
         self.apply_cluster_data_command(request)
     }
 }

@@ -11,22 +11,20 @@ use openraft::entry::RaftPayload;
 use openraft::storage::RaftStateMachine;
 use tokio::sync::Mutex;
 
-use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_stored_snapshot::IronRaftStoredSnapshot;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
-use crate::IronClusterState;
 
 // IronMesh Raft 最小状态机存储模型。
 #[derive(Debug, Clone)]
-pub struct IronRaftStateMachineStore<S = IronClusterState>
+pub struct IronRaftStateMachineStore<S>
 where
     S: IronRaftStateMachineData,
 {
     pub last_applied_log: Arc<Mutex<Option<openraft::LogId<u64>>>>, // 状态机已经应用的最后一条日志标识。
     pub last_membership: Arc<Mutex<openraft::StoredMembership<u64, openraft::BasicNode>>>, // 状态机已经应用的最后一个成员关系。
-    pub state_machine: Arc<Mutex<S>>, // 当前节点持有的状态机数据。
-    pub snapshot_idx: Arc<Mutex<u64>>,               // 用于生成快照标识的递增序号。
+    pub state_machine: Arc<Mutex<S>>,  // 当前节点持有的状态机数据。
+    pub snapshot_idx: Arc<Mutex<u64>>, // 用于生成快照标识的递增序号。
     pub current_snapshot: Arc<Mutex<Option<IronRaftStoredSnapshot>>>, // 当前状态机保存的快照。
 }
 
@@ -46,7 +44,7 @@ where
     }
 }
 
-impl<S> RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore<S>
+impl<S> RaftStateMachine<IronRaftTypeConfig<S>> for IronRaftStateMachineStore<S>
 where
     S: IronRaftStateMachineData,
 {
@@ -69,12 +67,9 @@ where
     }
 
     // 应用已经提交的日志到状态机。
-    async fn apply<I>(
-        &mut self,
-        entries: I,
-    ) -> Result<Vec<IronClusterWriteResponse>, StorageError<u64>>
+    async fn apply<I>(&mut self, entries: I) -> Result<Vec<S::WriteResponse>, StorageError<u64>>
     where
-        I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig>> + openraft::OptionalSend,
+        I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig<S>>> + openraft::OptionalSend,
         I::IntoIter: openraft::OptionalSend,
     {
         let mut responses = Vec::new();
@@ -88,11 +83,11 @@ where
             }
 
             let response = match entry.payload {
-                EntryPayload::Blank => IronClusterWriteResponse::default(),
+                EntryPayload::Blank => S::WriteResponse::default(),
                 EntryPayload::Normal(request) => {
                     self.state_machine.lock().await.apply_raft_request(request)
                 }
-                EntryPayload::Membership(_) => IronClusterWriteResponse::default(),
+                EntryPayload::Membership(_) => S::WriteResponse::default(),
             };
 
             responses.push(response);
@@ -142,7 +137,7 @@ where
     // 读取当前快照。
     async fn get_current_snapshot(
         &mut self,
-    ) -> Result<Option<Snapshot<IronRaftTypeConfig>>, StorageError<u64>> {
+    ) -> Result<Option<Snapshot<IronRaftTypeConfig<S>>>, StorageError<u64>> {
         Ok(self
             .current_snapshot
             .lock()
@@ -155,12 +150,14 @@ where
     }
 }
 
-impl<S> RaftSnapshotBuilder<IronRaftTypeConfig> for IronRaftStateMachineStore<S>
+impl<S> RaftSnapshotBuilder<IronRaftTypeConfig<S>> for IronRaftStateMachineStore<S>
 where
     S: IronRaftStateMachineData,
 {
     // 构建当前状态机快照。
-    async fn build_snapshot(&mut self) -> Result<Snapshot<IronRaftTypeConfig>, StorageError<u64>> {
+    async fn build_snapshot(
+        &mut self,
+    ) -> Result<Snapshot<IronRaftTypeConfig<S>>, StorageError<u64>> {
         let state_machine = self.state_machine.lock().await;
         let data = serde_json::to_vec(&*state_machine).map_err(|error| StorageError::IO {
             source: StorageIOError::write_snapshot(None, openraft::AnyError::new(&error)),

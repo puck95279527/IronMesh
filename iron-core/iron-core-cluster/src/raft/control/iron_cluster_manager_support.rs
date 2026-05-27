@@ -35,6 +35,7 @@ use crate::raft::network::iron_raft_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::query::iron_raft_query::start_query_http_with_addr;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh 集群管理辅助动作。
 pub struct IronClusterManagerSupport;
@@ -166,11 +167,13 @@ impl IronClusterManagerSupport {
     }
 
     // 启动 Raft TCP 服务后台任务。
-    pub fn spawn_raft_tcp_server(
+    pub fn spawn_raft_tcp_server<S>(
         tasks: &mut JoinSet<()>,
-        tcp_server: IronRaftTcpServer,
+        tcp_server: IronRaftTcpServer<S>,
         tcp_listener: TcpListener,
-    ) {
+    ) where
+        S: IronRaftStateMachineData,
+    {
         tasks.spawn(async move {
             if let Err(error) = tcp_server.serve(tcp_listener).await {
                 tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
@@ -179,11 +182,13 @@ impl IronClusterManagerSupport {
     }
 
     // 启动可选的调试 HTTP 查询服务后台任务。
-    pub fn spawn_debug_http(
+    pub fn spawn_debug_http<S>(
         tasks: &mut JoinSet<()>,
         manager: &IronClusterManagerCore,
-        raft: Raft<IronRaftTypeConfig>,
-    ) {
+        raft: Raft<IronRaftTypeConfig<S>>,
+    ) where
+        S: IronRaftStateMachineData,
+    {
         let node_id = manager.current_node.node_id;
         let debug_http_addr = manager.current_node.http_debug_addr.clone();
 
@@ -198,11 +203,13 @@ impl IronClusterManagerSupport {
     }
 
     // 启动 learner TCP 断线自动移除任务。
-    pub(crate) fn spawn_learner_disconnect_remover(
+    pub(crate) fn spawn_learner_disconnect_remover<S>(
         tasks: &mut JoinSet<()>,
-        raft: Raft<IronRaftTypeConfig>,
+        raft: Raft<IronRaftTypeConfig<S>>,
         mut event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
-    ) {
+    ) where
+        S: IronRaftStateMachineData,
+    {
         tasks.spawn(async move {
             while let Some(event) = event_receiver.recv().await {
                 Self::handle_raft_network_event(raft.clone(), event).await;
@@ -211,10 +218,12 @@ impl IronClusterManagerSupport {
     }
 
     // 处理 Raft TCP 连接事件。
-    async fn handle_raft_network_event(
-        raft: Raft<IronRaftTypeConfig>,
+    async fn handle_raft_network_event<S>(
+        raft: Raft<IronRaftTypeConfig<S>>,
         event: IronRaftNetworkEvent,
-    ) {
+    ) where
+        S: IronRaftStateMachineData,
+    {
         tracing::warn!(
             target_node_id = event.target_node_id,
             target_addr = %event.target_addr,
@@ -306,10 +315,13 @@ impl IronClusterManagerSupport {
     }
 
     // 遍历其他注册节点，尝试加入已有集群。
-    pub async fn try_join_existing_cluster(
+    pub async fn try_join_existing_cluster<S>(
         manager: &IronClusterManagerCore,
-        raft: &Raft<IronRaftTypeConfig>,
-    ) -> Result<(bool, bool), Box<dyn Error>> {
+        raft: &Raft<IronRaftTypeConfig<S>>,
+    ) -> Result<(bool, bool), Box<dyn Error>>
+    where
+        S: IronRaftStateMachineData,
+    {
         let self_tag = self_node_tag(manager.current_node.node_id);
         let mut saw_peer = false;
 
@@ -325,11 +337,12 @@ impl IronClusterManagerSupport {
                 continue;
             }
 
-            let client = IronRaftTcpClient {
+            let client: IronRaftTcpClient<S> = IronRaftTcpClient {
                 target_node_id: *peer_id,
                 target_addr: peer_addr,
                 cached_stream: Arc::new(tokio::sync::Mutex::new(None)),
                 event_sender: None,
+                marker: std::marker::PhantomData,
             };
 
             match client
@@ -342,7 +355,7 @@ impl IronClusterManagerSupport {
                 Ok(()) => {
                     tracing::info!(%self_tag, %peer_tag, "[Iron] [cluster] leader 已接受当前节点加入请求，等待本地 Raft 状态就绪");
                     if let Err(error) =
-                        Self::wait_until_local_joined_cluster(manager, raft, *peer_id).await
+                        Self::wait_until_local_joined_cluster::<S>(manager, raft, *peer_id).await
                     {
                         saw_peer = true;
                         tracing::warn!(%self_tag, %peer_tag, %error, "[Iron] [cluster] 本地 Raft 状态尚未就绪，稍后重试加入流程");
@@ -367,11 +380,14 @@ impl IronClusterManagerSupport {
     }
 
     // 等待当前节点本地 Raft 状态确认已经完成集群加入。
-    pub async fn wait_until_local_joined_cluster(
+    pub async fn wait_until_local_joined_cluster<S>(
         manager: &IronClusterManagerCore,
-        raft: &Raft<IronRaftTypeConfig>,
+        raft: &Raft<IronRaftTypeConfig<S>>,
         leader_id: u64,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error>>
+    where
+        S: IronRaftStateMachineData,
+    {
         let current_node_id = manager.current_node.node_id;
         let self_tag = self_node_tag(manager.current_node.node_id);
 
@@ -401,10 +417,13 @@ impl IronClusterManagerSupport {
     }
 
     // 初始化只包含当前节点的最小 Raft 集群。
-    pub async fn initialize_minimal_cluster(
+    pub async fn initialize_minimal_cluster<S>(
         manager: &IronClusterManagerCore,
-        raft: &Raft<IronRaftTypeConfig>,
-    ) -> Result<(), Box<dyn Error>> {
+        raft: &Raft<IronRaftTypeConfig<S>>,
+    ) -> Result<(), Box<dyn Error>>
+    where
+        S: IronRaftStateMachineData,
+    {
         let self_tag = self_node_tag(manager.current_node.node_id);
         tracing::info!(%self_tag, "[Iron] [cluster] 开始初始化最小 Raft 集群");
         let init_members = BTreeMap::from([(
@@ -418,10 +437,13 @@ impl IronClusterManagerSupport {
     }
 
     // 等待当前节点成为领导节点(leader)。
-    pub async fn wait_until_leader(
+    pub async fn wait_until_leader<S>(
         manager: &IronClusterManagerCore,
-        raft: &Raft<IronRaftTypeConfig>,
-    ) -> Result<(), Box<dyn Error>> {
+        raft: &Raft<IronRaftTypeConfig<S>>,
+    ) -> Result<(), Box<dyn Error>>
+    where
+        S: IronRaftStateMachineData,
+    {
         let self_tag = self_node_tag(manager.current_node.node_id);
         tracing::info!(%self_tag, "[Iron] [cluster] 正在等待当前节点成为领导节点(leader)");
         if let Err(error) = raft
@@ -449,12 +471,15 @@ impl IronClusterManagerSupport {
     }
 
     // 将单个注册节点加入集群。
-    pub async fn join_one_boot_node(
+    pub async fn join_one_boot_node<S>(
         manager: &IronClusterManagerCore,
-        raft: &Raft<IronRaftTypeConfig>,
+        raft: &Raft<IronRaftTypeConfig<S>>,
         target_id: u64,
         target_node: &IronClusterNode,
-    ) -> Result<bool, Box<dyn Error>> {
+    ) -> Result<bool, Box<dyn Error>>
+    where
+        S: IronRaftStateMachineData,
+    {
         let self_tag = self_node_tag(manager.current_node.node_id);
         let peer_tag = peer_node_tag(target_id);
 

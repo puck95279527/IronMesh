@@ -11,6 +11,7 @@ pub use api::IronClusterManager;
 pub use api::IronClusterNode;
 pub use api::IronClusterNodeRole;
 pub use api::IronClusterState;
-pub use api::IronClusterWriteRequest;
 pub use api::IronClusterWriteError;
+pub use api::IronClusterWriteRequest;
 pub use api::IronClusterWriteResponse;
+pub use api::IronRaftStateMachineData;

@@ -17,27 +17,33 @@ use tokio::sync::Semaphore;
 
 use crate::raft::iron_raft_constants::MAX_TCP_CONNECTIONS;
 use crate::raft::iron_raft_log_tag::peer_tag as peer_node_tag;
-use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_response::IronRaftFullSnapshotResponse;
 use crate::raft::network::tcp::iron_raft_tcp_frame::IronRaftTcpFrame;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_request::IronRaftTcpRpcRequest;
 use crate::raft::network::tcp::iron_raft_tcp_rpc_response::IronRaftTcpRpcResponse;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh Raft TCP 服务端。
 #[derive(Clone)]
-pub struct IronRaftTcpServer {
+pub struct IronRaftTcpServer<S>
+where
+    S: IronRaftStateMachineData,
+{
     // Raft 节点句柄。
-    pub raft: Raft<IronRaftTypeConfig>,
+    pub raft: Raft<IronRaftTypeConfig<S>>,
     // 需要参与投票的注册节点 ID。
     pub boot_node_ids: BTreeSet<u64>,
 }
 
 // OpenRaft 标准协议相关实现。
-impl IronRaftTcpServer {
+impl<S> IronRaftTcpServer<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 创建 TCP 服务端。
-    pub fn new(raft: Raft<IronRaftTypeConfig>, boot_node_ids: BTreeSet<u64>) -> Self {
+    pub fn new(raft: Raft<IronRaftTypeConfig<S>>, boot_node_ids: BTreeSet<u64>) -> Self {
         Self {
             raft,
             boot_node_ids,
@@ -80,22 +86,23 @@ impl IronRaftTcpServer {
 
     // 在单个连接上循环处理多个请求。
     async fn handle_connection(
-        raft: Raft<IronRaftTypeConfig>,
+        raft: Raft<IronRaftTypeConfig<S>>,
         boot_node_ids: BTreeSet<u64>,
         stream: &mut tokio::net::TcpStream,
     ) -> Result<(), std::io::Error> {
         loop {
-            let request = match IronRaftTcpFrame::read_json::<IronRaftTcpRpcRequest>(stream).await {
-                Ok(request) => request,
-                Err(error) => {
-                    if IronRaftTcpFrame::is_connection_closed(&error) {
-                        return Ok(());
+            let request =
+                match IronRaftTcpFrame::read_json::<IronRaftTcpRpcRequest<S>>(stream).await {
+                    Ok(request) => request,
+                    Err(error) => {
+                        if IronRaftTcpFrame::is_connection_closed(&error) {
+                            return Ok(());
+                        }
+                        return Err(error);
                     }
-                    return Err(error);
-                }
-            };
+                };
 
-            let response = match request {
+            let response: IronRaftTcpRpcResponse<S> = match request {
                 IronRaftTcpRpcRequest::AppendEntries(rpc) => {
                     let result = raft.append_entries(rpc).await;
                     IronRaftTcpRpcResponse::AppendEntries(result)
@@ -122,29 +129,13 @@ impl IronRaftTcpServer {
                     IronRaftTcpRpcResponse::FullSnapshot(result)
                 }
                 IronRaftTcpRpcRequest::ClientWrite(request) => {
-                    let (action, key, value) = match &request {
-                        IronClusterWriteRequest::Insert(value) => {
-                            ("insert", value.id, Some(value.clone()))
-                        }
-                        IronClusterWriteRequest::Update(value) => {
-                            ("update", value.id, Some(value.clone()))
-                        }
-                        IronClusterWriteRequest::Delete(key) => {
-                            ("delete", *key, None)
-                        }
-                    };
                     let result = raft
                         .client_write(request)
                         .await
                         .map(|response| response.data)
                         .map_err(|error| error.to_string());
                     if result.is_ok() {
-                        tracing::debug!(
-                            action,
-                            key = %key,
-                            value = ?value,
-                            "[Iron] [cluster-data] leader 收到并写入集群业务数据"
-                        );
+                        tracing::debug!("[Iron] [cluster-data] leader 收到并写入集群业务数据");
                     }
                     IronRaftTcpRpcResponse::ClientWrite(result)
                 }
@@ -225,10 +216,13 @@ impl IronRaftTcpServer {
 }
 
 // IronMesh 自定义扩展协议相关实现。
-impl IronRaftTcpServer {
+impl<S> IronRaftTcpServer<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 处理节点加入请求。
     async fn handle_join_node(
-        raft: Raft<IronRaftTypeConfig>,
+        raft: Raft<IronRaftTypeConfig<S>>,
         boot_node_ids: BTreeSet<u64>,
         node_id: u64,
         node_addr: String,

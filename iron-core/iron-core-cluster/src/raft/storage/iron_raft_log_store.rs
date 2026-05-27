@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 
@@ -11,17 +12,25 @@ use openraft::storage::RaftLogStorage;
 use tokio::sync::Mutex;
 
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh Raft 最小日志存储模型。
 #[derive(Debug, Clone)]
-pub struct IronRaftLogStore {
+pub struct IronRaftLogStore<S>
+where
+    S: IronRaftStateMachineData,
+{
     pub last_purged_log_id: Arc<Mutex<Option<openraft::LogId<u64>>>>, // 已清理的最后一条日志标识。
-    pub logs: Arc<Mutex<BTreeMap<u64, openraft::Entry<IronRaftTypeConfig>>>>, // 按日志索引保存的 Raft 日志。
+    pub logs: Arc<Mutex<BTreeMap<u64, openraft::Entry<IronRaftTypeConfig<S>>>>>, // 按日志索引保存的 Raft 日志。
     pub committed: Arc<Mutex<Option<openraft::LogId<u64>>>>, // 已提交的最后一条日志标识。
     pub vote: Arc<Mutex<Option<openraft::Vote<u64>>>>,       // 当前节点保存的投票状态。
+    marker: PhantomData<fn() -> S>,                          // 状态机类型标记。
 }
 
-impl Default for IronRaftLogStore {
+impl<S> Default for IronRaftLogStore<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 创建空的最小日志存储。
     fn default() -> Self {
         Self {
@@ -29,16 +38,20 @@ impl Default for IronRaftLogStore {
             logs: Arc::new(Mutex::new(BTreeMap::new())),
             committed: Arc::new(Mutex::new(None)),
             vote: Arc::new(Mutex::new(None)),
+            marker: PhantomData,
         }
     }
 }
 
-impl RaftLogReader<IronRaftTypeConfig> for IronRaftLogStore {
+impl<S> RaftLogReader<IronRaftTypeConfig<S>> for IronRaftLogStore<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 读取指定范围内的日志。
     async fn try_get_log_entries<RB>(
         &mut self,
         range: RB,
-    ) -> Result<Vec<openraft::Entry<IronRaftTypeConfig>>, StorageError<u64>>
+    ) -> Result<Vec<openraft::Entry<IronRaftTypeConfig<S>>>, StorageError<u64>>
     where
         RB: RangeBounds<u64> + Clone + Debug + openraft::OptionalSend,
     {
@@ -47,11 +60,16 @@ impl RaftLogReader<IronRaftTypeConfig> for IronRaftLogStore {
     }
 }
 
-impl RaftLogStorage<IronRaftTypeConfig> for IronRaftLogStore {
+impl<S> RaftLogStorage<IronRaftTypeConfig<S>> for IronRaftLogStore<S>
+where
+    S: IronRaftStateMachineData,
+{
     type LogReader = Self;
 
     // 读取日志存储的边界状态。
-    async fn get_log_state(&mut self) -> Result<LogState<IronRaftTypeConfig>, StorageError<u64>> {
+    async fn get_log_state(
+        &mut self,
+    ) -> Result<LogState<IronRaftTypeConfig<S>>, StorageError<u64>> {
         let logs = self.logs.lock().await;
         let last_purged_log_id = self.last_purged_log_id.lock().await.clone();
         let last_log_id = logs
@@ -100,10 +118,10 @@ impl RaftLogStorage<IronRaftTypeConfig> for IronRaftLogStore {
     async fn append<I>(
         &mut self,
         entries: I,
-        callback: LogFlushed<IronRaftTypeConfig>,
+        callback: LogFlushed<IronRaftTypeConfig<S>>,
     ) -> Result<(), StorageError<u64>>
     where
-        I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig>> + openraft::OptionalSend,
+        I: IntoIterator<Item = openraft::Entry<IronRaftTypeConfig<S>>> + openraft::OptionalSend,
         I::IntoIter: openraft::OptionalSend,
     {
         let mut logs = self.logs.lock().await;

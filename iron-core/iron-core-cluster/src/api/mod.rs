@@ -9,6 +9,7 @@ pub use crate::raft::control::iron_cluster_node::IronClusterNode;
 pub use crate::raft::control::iron_cluster_node::IronClusterNodeRole;
 pub use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 pub use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
+pub use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 pub use iron_cluster_handler::IronClusterHandler;
 pub use iron_cluster_manager::IronClusterManager;
 pub use iron_cluster_write_error::IronClusterWriteError;

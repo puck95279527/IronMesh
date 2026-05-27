@@ -2,19 +2,23 @@ use std::error::Error;
 
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::control_plane::iron_cluster_runtime::IronClusterRuntime;
-use crate::data_plane::iron_cluster_state::IronClusterState;
-use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
-use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // 1. IronMesh 集群运行处理器，是外部调用者操作已启动节点的公开入口。
-pub struct IronClusterHandler {
+pub struct IronClusterHandler<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 2. 集群内部运行时，封装控制面和数据面运行期组件。
-    pub(crate) inner: IronClusterRuntime,
+    pub(crate) inner: IronClusterRuntime<S>,
 }
 
-impl IronClusterHandler {
+impl<S> IronClusterHandler<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 3. 读取当前节点本地已经 apply 的状态机数据。
-    pub async fn local_state_machine_data(&self) -> IronClusterState {
+    pub async fn local_state_machine_data(&self) -> S {
         self.inner.local_state_machine_data().await
     }
 
@@ -31,8 +35,8 @@ impl IronClusterHandler {
     // 6. 写入集群业务数据。
     pub async fn write_cluster_data(
         &self,
-        request: IronClusterWriteRequest,
-    ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
+        request: S::WriteRequest,
+    ) -> Result<S::WriteResponse, IronClusterWriteError> {
         self.inner.write_cluster_data(request).await
     }
 
