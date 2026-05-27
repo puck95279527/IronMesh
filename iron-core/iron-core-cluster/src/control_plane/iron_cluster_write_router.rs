@@ -38,13 +38,13 @@ impl IronClusterWriteRouter {
         request: IronClusterWriteRequest,
     ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
         let (action, key, value) = match &request {
-            IronClusterWriteRequest::Insert { key, value } => {
-                ("insert", key.clone(), Some(value.clone()))
+            IronClusterWriteRequest::Insert(value) => {
+                ("insert", value.id, Some(value.clone()))
             }
-            IronClusterWriteRequest::Update { key, value } => {
-                ("update", key.clone(), Some(value.clone()))
+            IronClusterWriteRequest::Update(value) => {
+                ("update", value.id, Some(value.clone()))
             }
-            IronClusterWriteRequest::Delete { key } => ("delete", key.clone(), None),
+            IronClusterWriteRequest::Delete(key) => ("delete", *key, None),
         };
         let mut last_error = None;
 

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use crate::data_plane::iron_cat::IronCat;
 use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
@@ -7,7 +8,7 @@ use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData
 // IronMesh 集群状态数据模型。
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct IronClusterState {
-    pub values: BTreeMap<String, String>, // 集群业务数据的最小键值存储。
+    pub values: BTreeMap<u64, IronCat>, // 集群业务数据的最小键值存储。
 }
 
 impl IronClusterState {
@@ -17,7 +18,8 @@ impl IronClusterState {
         request: IronClusterWriteRequest,
     ) -> IronClusterWriteResponse {
         match request {
-            IronClusterWriteRequest::Insert { key, value } => {
+            IronClusterWriteRequest::Insert(value) => {
+                let key = value.id;
                 if let Some(existing_value) = self.values.get(&key).cloned() {
                     IronClusterWriteResponse {
                         applied: false,
@@ -35,7 +37,8 @@ impl IronClusterState {
                     }
                 }
             }
-            IronClusterWriteRequest::Update { key, value } => {
+            IronClusterWriteRequest::Update(value) => {
+                let key = value.id;
                 if let Some(previous_value) = self.values.get(&key).cloned() {
                     self.values.insert(key, value.clone());
                     IronClusterWriteResponse {
@@ -53,7 +56,7 @@ impl IronClusterState {
                     }
                 }
             }
-            IronClusterWriteRequest::Delete { key } => {
+            IronClusterWriteRequest::Delete(key) => {
                 if let Some(previous_value) = self.values.remove(&key) {
                     IronClusterWriteResponse {
                         applied: true,
