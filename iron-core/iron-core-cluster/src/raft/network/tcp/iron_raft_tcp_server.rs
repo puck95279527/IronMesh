@@ -124,7 +124,7 @@ impl IronRaftTcpServer {
                 IronRaftTcpRpcRequest::ClientWrite(request) => {
                     let (action, key, value) = match &request {
                         IronRaftRequest::ClusterData(command) => match command {
-                            crate::cluster_data::iron_cluster_data_command::IronClusterDataCommand::Set {
+                            crate::data_plane::iron_cluster_data_command::IronClusterDataCommand::Set {
                                 key,
                                 value,
                             } => ("set", key.clone(), value.clone()),

@@ -1,6 +1,7 @@
-// Raft 集群管理器入口。
+// 集群控制面模块入口。
 pub mod iron_raft_cluster_manager;
-// Raft 集群启动主流程。
 pub mod iron_raft_cluster_manager_flow;
-// Raft 集群管理辅助动作。
 pub mod iron_raft_cluster_manager_support;
+pub mod iron_raft_node;
+
+pub use iron_raft_cluster_manager::IronRaftClusterManager;

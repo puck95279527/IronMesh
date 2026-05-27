@@ -16,9 +16,9 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use toml::Value;
 
-use crate::raft::cluster::iron_raft_node::IronRaftNode;
-use crate::raft::cluster::iron_raft_node::IronRaftNodeRole;
-use crate::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
+use crate::control_plane::iron_raft_cluster_manager::IronRaftClusterManager;
+use crate::control_plane::iron_raft_node::IronRaftNode;
+use crate::control_plane::iron_raft_node::IronRaftNodeRole;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_LIMIT;
 use crate::raft::iron_raft_constants::CLUSTER_INITIALIZE_DELAY;

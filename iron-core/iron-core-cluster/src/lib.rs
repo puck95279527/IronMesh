@@ -1,5 +1,6 @@
 // 集群核心库入口。
-pub mod cluster_api;
-pub mod cluster_data;
+pub mod api;
+pub mod control_plane;
+pub mod data_plane;
 pub mod raft;
 pub mod utils;

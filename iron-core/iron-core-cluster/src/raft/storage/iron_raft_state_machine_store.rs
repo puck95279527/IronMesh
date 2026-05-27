@@ -11,11 +11,11 @@ use openraft::entry::RaftPayload;
 use openraft::storage::RaftStateMachine;
 use tokio::sync::Mutex;
 
+use crate::data_plane::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::raft::model::command::iron_raft_request::IronRaftRequest;
 use crate::raft::model::command::iron_raft_response::IronRaftResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_stored_snapshot::IronRaftStoredSnapshot;
-use crate::raft::model::state_machine::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh Raft 最小状态机存储模型。
 #[derive(Debug, Clone)]

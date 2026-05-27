@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 // 打印当前节点本地集群业务数据大小。
 async fn log_local_cluster_data_size(
-    cluster_handle: &iron_core_cluster::cluster_api::iron_cluster_handle::IronClusterHandle,
+    cluster_handle: &iron_core_cluster::api::iron_cluster_handle::IronClusterHandle,
 ) {
     let state_machine_data = cluster_handle.local_state_machine_data().await;
     tracing::debug!(
@@ -17,7 +17,7 @@ async fn log_local_cluster_data_size(
 
 // 启动当前节点本地集群业务数据大小日志任务。
 fn spawn_local_cluster_data_size_logger(
-    cluster_handle: Arc<iron_core_cluster::cluster_api::iron_cluster_handle::IronClusterHandle>,
+    cluster_handle: Arc<iron_core_cluster::api::iron_cluster_handle::IronClusterHandle>,
 ) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
@@ -30,7 +30,7 @@ fn spawn_local_cluster_data_size_logger(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use iron_core_cluster::raft::cluster::manager::iron_raft_cluster_manager::IronRaftClusterManager;
+    use iron_core_cluster::control_plane::iron_raft_cluster_manager::IronRaftClusterManager;
     use support::cluster_data_writer::write_current_node_cluster_data;
     use support::cluster_logging::init_cluster_process_logging;
 
