@@ -9,7 +9,6 @@ use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::control_plane::iron_cluster_write_router::IronClusterWriteRouter;
 use crate::data_plane::iron_cluster_data_command::IronClusterDataCommand;
 use crate::data_plane::iron_cluster_state::IronClusterState;
-use crate::data_plane::iron_cluster_state_reader::IronClusterStateReader;
 use crate::raft::control::iron_cluster_node::IronClusterNode;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
@@ -19,8 +18,8 @@ use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineSto
 pub(crate) struct IronClusterRuntime {
     // 当前集群节点信息，用于对外 API 记录操作来源。
     current_node: IronClusterNode,
-    // 集群状态读取器。
-    state_reader: IronClusterStateReader,
+    // 当前节点本地状态机存储。
+    state_machine_store: IronRaftStateMachineStore,
     // 集群写入路由器。
     write_router: IronClusterWriteRouter,
     // 当前集群节点托管的后台任务集合。
@@ -37,7 +36,7 @@ impl IronClusterRuntime {
     ) -> Self {
         Self {
             current_node: current_node.clone(),
-            state_reader: IronClusterStateReader::new(state_machine_store),
+            state_machine_store,
             write_router: IronClusterWriteRouter::new(current_node, raft),
             tasks: Arc::new(tokio::sync::Mutex::new(tasks)),
         }
@@ -45,7 +44,7 @@ impl IronClusterRuntime {
 
     // 读取当前节点本地已经 apply 的状态机数据。
     pub(crate) async fn local_state_machine_data(&self) -> IronClusterState {
-        self.state_reader.local_state_machine_data().await
+        self.state_machine_store.state_machine.lock().await.clone()
     }
 
     // 读取当前节点 ID。
