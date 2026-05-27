@@ -25,8 +25,8 @@ use tokio::sync::mpsc;
 
 use crate::raft::iron_raft_constants::CLIENT_WRITE_TIMEOUT;
 use crate::raft::iron_raft_constants::JOIN_NODE_TIMEOUT;
+use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
-use crate::raft::model::command::iron_raft_request::IronRaftRequest;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotMeta;
 use crate::raft::model::snapshot::iron_raft_full_snapshot_meta::IronRaftFullSnapshotNode;
@@ -212,7 +212,7 @@ impl IronRaftTcpClient {
     // 请求目标节点执行客户端业务写入。
     pub async fn client_write(
         &self,
-        request: IronRaftRequest,
+        request: IronClusterWriteRequest,
     ) -> Result<IronClusterWriteResponse, std::io::Error> {
         let request = IronRaftTcpRpcRequest::ClientWrite(request);
 

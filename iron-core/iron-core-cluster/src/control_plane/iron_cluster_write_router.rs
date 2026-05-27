@@ -4,12 +4,11 @@ use openraft::Raft;
 use openraft::RaftMetrics;
 
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
-use crate::data_plane::iron_cluster_data_command::IronClusterDataCommand;
 use crate::raft::control::iron_cluster_node::IronClusterNode;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_LIMIT;
+use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
-use crate::raft::model::command::iron_raft_request::IronRaftRequest;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 
@@ -36,22 +35,25 @@ impl IronClusterWriteRouter {
     // 写入集群业务数据。
     pub(crate) async fn write_cluster_data(
         &self,
-        command: IronClusterDataCommand,
+        request: IronClusterWriteRequest,
     ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
-        let (action, key, value) = match &command {
-            IronClusterDataCommand::Set { key, value } => ("set", key.clone(), value.clone()),
+        let (action, key, value) = match &request {
+            IronClusterWriteRequest::Insert { key, value } => {
+                ("insert", key.clone(), Some(value.clone()))
+            }
+            IronClusterWriteRequest::Update { key, value } => {
+                ("update", key.clone(), Some(value.clone()))
+            }
+            IronClusterWriteRequest::Delete { key } => ("delete", key.clone(), None),
         };
         let mut last_error = None;
 
         for attempt in 1..=CLUSTER_WRITE_RETRY_LIMIT {
-            let command = command.clone();
+            let request = request.clone();
             let metrics = self.raft.metrics().borrow().clone();
 
             let result = if metrics.current_leader == Some(self.current_node.node_id) {
-                match self
-                    .raft
-                    .client_write(IronRaftRequest::ClusterData(command))
-                    .await
+                match self.raft.client_write(request).await
                 {
                     Ok(response) => Ok((
                         response.data,
@@ -66,10 +68,7 @@ impl IronClusterWriteRouter {
                     Ok((leader_id, leader_addr)) => {
                         let (client, connection_state) =
                             self.leader_write_client(leader_id, &leader_addr).await;
-                        match client
-                            .client_write(IronRaftRequest::ClusterData(command))
-                            .await
-                        {
+                        match client.client_write(request).await {
                             Ok(response) => {
                                 Ok((response, "forward_to_leader", connection_state, leader_id))
                             }
@@ -126,7 +125,7 @@ impl IronClusterWriteRouter {
                         leader_id,
                         action,
                         key = %key,
-                        value = %value,
+                        value = ?value,
                         attempt,
                         "[Iron] [cluster-data] 集群业务数据写入成功"
                     );
@@ -137,7 +136,7 @@ impl IronClusterWriteRouter {
                     tracing::warn!(
                         action,
                         key = %key,
-                        value = %value,
+                        value = ?value,
                         attempt,
                         %error,
                         "[Iron] [cluster-data] 集群业务数据写入失败，准备重新读取 leader 后重试"

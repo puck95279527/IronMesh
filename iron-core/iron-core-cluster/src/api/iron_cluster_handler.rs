@@ -2,8 +2,8 @@ use std::error::Error;
 
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::control_plane::iron_cluster_runtime::IronClusterRuntime;
-use crate::data_plane::iron_cluster_data_command::IronClusterDataCommand;
 use crate::data_plane::iron_cluster_state::IronClusterState;
+use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 
 // 1. IronMesh 集群运行处理器，是外部调用者操作已启动节点的公开入口。
@@ -31,9 +31,9 @@ impl IronClusterHandler {
     // 6. 写入集群业务数据。
     pub async fn write_cluster_data(
         &self,
-        command: IronClusterDataCommand,
+        request: IronClusterWriteRequest,
     ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
-        self.inner.write_cluster_data(command).await
+        self.inner.write_cluster_data(request).await
     }
 
     // 7. 等待集群后台任务结束或失败，供实际服务进程显式阻塞使用。

@@ -1,7 +1,7 @@
 ﻿// 启动斗地主 Raft 验证节点。
 mod support;
 
-use iron_core_cluster::{IronClusterDataCommand, IronClusterManager};
+use iron_core_cluster::{IronClusterManager, IronClusterWriteRequest};
 use support::cluster_logging::init_cluster_process_logging;
 
 #[tokio::main]
@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cluster_handler = cluster_manager.start().await?;
     cluster_handler
-        .write_cluster_data(IronClusterDataCommand::Set {
+        .write_cluster_data(IronClusterWriteRequest::Insert {
             key: format!("cluster/node/{}", cluster_handler.current_node_id()),
             value: format!(
                 "{}|{}|normal",

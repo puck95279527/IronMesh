@@ -7,9 +7,9 @@ use tokio::task::JoinSet;
 
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::control_plane::iron_cluster_write_router::IronClusterWriteRouter;
-use crate::data_plane::iron_cluster_data_command::IronClusterDataCommand;
 use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::control::iron_cluster_node::IronClusterNode;
+use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineStore;
@@ -60,9 +60,9 @@ impl IronClusterRuntime {
     // 写入集群业务数据。
     pub(crate) async fn write_cluster_data(
         &self,
-        command: IronClusterDataCommand,
+        request: IronClusterWriteRequest,
     ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
-        self.write_router.write_cluster_data(command).await
+        self.write_router.write_cluster_data(request).await
     }
 
     // 等待集群后台任务结束或失败。

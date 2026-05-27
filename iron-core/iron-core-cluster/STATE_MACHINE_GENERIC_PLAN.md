@@ -45,7 +45,7 @@
 |---|---|---|
 | 状态机存储 | `IronRaftStateMachineStore` 固定保存 `IronClusterState` | 改为 `IronRaftStateMachineStore<S = IronClusterState>`。 |
 | 状态机数据 | 存储层直接依赖 `IronClusterState` | 存储层依赖 trait 约束。 |
-| 命令类型 | `IronRaftRequest` | 暂时保持不变。 |
+| 命令类型 | `IronClusterWriteRequest` | 暂时保持不变。 |
 | 响应类型 | `IronClusterWriteResponse` | 暂时保持不变。 |
 | Manager/Handler | 非泛型 | 暂时保持不变。 |
 | TCP RPC | 固定请求响应枚举 | 暂时保持不变。 |
@@ -58,7 +58,7 @@ pub trait IronRaftStateMachineData:
 {
     fn apply_raft_request(
         &mut self,
-        request: IronRaftRequest,
+        request: IronClusterWriteRequest,
     ) -> IronClusterWriteResponse;
 }
 ```
@@ -70,7 +70,7 @@ pub trait IronRaftStateMachineData:
 | `IronClusterState` | 实现 `IronRaftStateMachineData`。 |
 | `IronRaftStateMachineStore<S>` | 使用 `Arc<Mutex<S>>` 保存状态机数据。 |
 | `IronClusterStateReader` | 可以继续使用默认 `IronRaftStateMachineStore`，或同步改成内部泛型但对外默认。 |
-| `IronRaftTypeConfig` | 暂不变，仍使用 `IronRaftRequest` 和 `IronClusterWriteResponse`。 |
+| `IronRaftTypeConfig` | 暂不变，仍使用 `IronClusterWriteRequest` 和 `IronClusterWriteResponse`。 |
 
 验收标准：
 
@@ -78,7 +78,7 @@ pub trait IronRaftStateMachineData:
 |---|---|
 | 编译通过 | `cargo check -p iron-core-cluster` 通过。 |
 | API 不变 | 现有 `IronClusterManager::add_voter/add_learner/start` 不改变调用方式。 |
-| 写入行为不变 | `IronClusterDataCommand::Set` 仍能写入默认状态机。 |
+| 写入行为不变 | `IronClusterWriteRequest::Insert/Update/Delete` 仍能写入默认状态机。 |
 | snapshot 行为不变 | 默认状态机仍能序列化、安装和读取快照。 |
 
 ## 阶段二：扩展默认状态数据结构
@@ -131,7 +131,7 @@ pub trait IronRaftStateMachineData:
 
 | 类型 | 影响 |
 |---|---|
-| `IronRaftRequest` | 需要拆分默认命令和泛型命令。 |
+| `IronClusterWriteRequest` | 需要拆分默认命令和泛型命令。 |
 | `IronClusterWriteResponse` | 需要评估是否成为默认响应。 |
 | `IronRaftTypeConfig` | 需要引入泛型或类型别名。 |
 | `IronRaftTcpRpcRequest/Response` | 需要支持泛型命令和响应，或拆出协议层包装。 |
@@ -162,7 +162,7 @@ pub trait IronRaftStateMachineData:
 | `IronClusterState` | 实现状态机范式 trait。 |
 | `IronRaftStateMachineStore` | 改为泛型结构，默认类型为 `IronClusterState`。 |
 | `IronRaftStateMachineStore::state_machine` | 从 `Arc<Mutex<IronClusterState>>` 改为 `Arc<Mutex<S>>`。 |
-| `apply` | 从直接匹配 `IronRaftRequest` 改为委托给状态机范式 trait。 |
+| `apply` | 从直接匹配 `IronClusterWriteRequest` 改为委托给状态机范式 trait。 |
 | snapshot 序列化 | 从序列化固定 `IronClusterState` 改为序列化 `S`。 |
 | snapshot 安装 | 从反序列化固定 `IronClusterState` 改为反序列化 `S`。 |
 
@@ -172,7 +172,7 @@ pub trait IronRaftStateMachineData:
 |---|---|
 | `IronClusterManager` | 对外非泛型 API 保持不变。 |
 | `IronClusterHandler` | 对外非泛型 API 保持不变。 |
-| `IronRaftRequest` | 继续作为当前 Raft 写入请求。 |
+| `IronClusterWriteRequest` | 继续作为当前 Raft 写入请求。 |
 | `IronClusterWriteResponse` | 继续作为当前写入响应。 |
 | `IronRaftTcpRpcRequest` | TCP 请求枚举暂不泛型化。 |
 | `IronRaftTcpRpcResponse` | TCP 响应枚举暂不泛型化。 |
