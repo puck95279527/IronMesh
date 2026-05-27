@@ -4,8 +4,8 @@ use openraft::Raft;
 use openraft::RaftMetrics;
 
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
-use crate::control_plane::iron_cluster_node::IronClusterNode;
 use crate::data_plane::iron_cluster_data_command::IronClusterDataCommand;
+use crate::raft::control::iron_cluster_node::IronClusterNode;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_INTERVAL;
 use crate::raft::iron_raft_constants::CLUSTER_WRITE_RETRY_LIMIT;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
