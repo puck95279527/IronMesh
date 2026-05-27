@@ -3,7 +3,6 @@ pub(crate) mod iron_cluster_handler;
 pub(crate) mod iron_cluster_manager;
 pub(crate) mod iron_cluster_write_error;
 
-pub use crate::data_plane::iron_cluster_data::IronClusterData;
 pub use crate::data_plane::iron_cluster_data_command::IronClusterDataCommand;
 pub use crate::data_plane::iron_cluster_state::IronClusterState;
 pub use crate::raft::control::iron_cluster_node::IronClusterNode;
