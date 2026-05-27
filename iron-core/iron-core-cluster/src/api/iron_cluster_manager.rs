@@ -65,15 +65,3 @@ where
         })
     }
 }
-
-impl<S> Eq for IronClusterManager<S> where S: IronRaftStateMachineData {}
-
-impl<S> PartialEq for IronClusterManager<S>
-where
-    S: IronRaftStateMachineData,
-{
-    // 比较集群管理器内部配置。
-    fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner
-    }
-}
