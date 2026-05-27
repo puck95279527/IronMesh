@@ -12,8 +12,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cluster_handler = cluster_manager.start().await?;
     cluster_handler
         .write_cluster_data(IronClusterDataCommand::Set {
-            key: "cluster/node/3".to_string(),
-            value: "3|127.0.0.1:5003|boot".to_string(),
+            key: format!("cluster/node/{}", cluster_handler.current_node_id()),
+            value: format!(
+                "{}|{}|boot",
+                cluster_handler.current_node_id(),
+                cluster_handler.current_node_addr()
+            ),
         })
         .await?;
     cluster_handler.wait_shutdown().await
