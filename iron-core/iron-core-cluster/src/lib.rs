@@ -5,7 +5,6 @@ pub(crate) mod data_plane;
 pub(crate) mod raft;
 pub(crate) mod utils;
 
-pub use api::IronClusterData;
 pub use api::IronClusterDataCommand;
 pub use api::IronClusterHandler;
 pub use api::IronClusterManager;

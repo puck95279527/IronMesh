@@ -11,36 +11,45 @@ use openraft::entry::RaftPayload;
 use openraft::storage::RaftStateMachine;
 use tokio::sync::Mutex;
 
-use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
-use crate::raft::model::command::iron_raft_request::IronRaftRequest;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::model::snapshot::iron_raft_stored_snapshot::IronRaftStoredSnapshot;
+use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
+use crate::IronClusterState;
 
 // IronMesh Raft 最小状态机存储模型。
 #[derive(Debug, Clone)]
-pub struct IronRaftStateMachineStore {
+pub struct IronRaftStateMachineStore<S = IronClusterState>
+where
+    S: IronRaftStateMachineData,
+{
     pub last_applied_log: Arc<Mutex<Option<openraft::LogId<u64>>>>, // 状态机已经应用的最后一条日志标识。
     pub last_membership: Arc<Mutex<openraft::StoredMembership<u64, openraft::BasicNode>>>, // 状态机已经应用的最后一个成员关系。
-    pub state_machine: Arc<Mutex<IronClusterState>>, // 当前节点持有的最小状态机数据。
+    pub state_machine: Arc<Mutex<S>>, // 当前节点持有的状态机数据。
     pub snapshot_idx: Arc<Mutex<u64>>,               // 用于生成快照标识的递增序号。
     pub current_snapshot: Arc<Mutex<Option<IronRaftStoredSnapshot>>>, // 当前状态机保存的快照。
 }
 
-impl Default for IronRaftStateMachineStore {
-    // 创建空的最小状态机存储。
+impl<S> Default for IronRaftStateMachineStore<S>
+where
+    S: IronRaftStateMachineData,
+{
+    // 创建空的状态机存储。
     fn default() -> Self {
         Self {
             last_applied_log: Arc::new(Mutex::new(None)),
             last_membership: Arc::new(Mutex::new(openraft::StoredMembership::default())),
-            state_machine: Arc::new(Mutex::new(IronClusterState::default())),
+            state_machine: Arc::new(Mutex::new(S::default())),
             snapshot_idx: Arc::new(Mutex::new(0)),
             current_snapshot: Arc::new(Mutex::new(None)),
         }
     }
 }
 
-impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
+impl<S> RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore<S>
+where
+    S: IronRaftStateMachineData,
+{
     type SnapshotBuilder = Self;
 
     // 读取状态机已经应用的状态。
@@ -80,11 +89,9 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
 
             let response = match entry.payload {
                 EntryPayload::Blank => IronClusterWriteResponse::default(),
-                EntryPayload::Normal(IronRaftRequest::ClusterData(command)) => self
-                    .state_machine
-                    .lock()
-                    .await
-                    .apply_cluster_data_command(command),
+                EntryPayload::Normal(request) => {
+                    self.state_machine.lock().await.apply_raft_request(request)
+                }
                 EntryPayload::Membership(_) => IronClusterWriteResponse::default(),
             };
 
@@ -113,7 +120,7 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
         snapshot: Box<Cursor<Vec<u8>>>,
     ) -> Result<(), StorageError<u64>> {
         let data = snapshot.into_inner();
-        let state_machine_data: IronClusterState =
+        let state_machine_data: S =
             serde_json::from_slice(&data).map_err(|error| StorageError::IO {
                 source: StorageIOError::read_snapshot(
                     Some(meta.signature()),
@@ -148,7 +155,10 @@ impl RaftStateMachine<IronRaftTypeConfig> for IronRaftStateMachineStore {
     }
 }
 
-impl RaftSnapshotBuilder<IronRaftTypeConfig> for IronRaftStateMachineStore {
+impl<S> RaftSnapshotBuilder<IronRaftTypeConfig> for IronRaftStateMachineStore<S>
+where
+    S: IronRaftStateMachineData,
+{
     // 构建当前状态机快照。
     async fn build_snapshot(&mut self) -> Result<Snapshot<IronRaftTypeConfig>, StorageError<u64>> {
         let state_machine = self.state_machine.lock().await;

@@ -12,8 +12,7 @@
 |---|---|---|
 | Raft 存储层 | `IronRaftStateMachineStore` | 保存 Raft 已 apply 的状态机数据、membership、snapshot。 |
 | 状态数据 | `IronClusterState` | 表示当前集群状态机数据。 |
-| 数据包装 | `IronClusterData` | 包装最小 KV 数据。 |
-| 实际数据 | `BTreeMap<String, String>` | 保存当前验证用的 key/value。 |
+| 状态字段 | `BTreeMap<String, String>` | 保存当前验证用的 key/value。 |
 
 这个结构在验证阶段可用，但 `IronClusterState` 后续很可能频繁变化，例如加入服务注册、能力标签、节点负载、路由拓扑、租约状态等。若 Raft 存储层长期绑定 `IronClusterState`，后续每次数据面演进都会牵动核心存储代码。
 
@@ -82,22 +81,21 @@ pub trait IronRaftStateMachineData:
 | 写入行为不变 | `IronClusterDataCommand::Set` 仍能写入默认状态机。 |
 | snapshot 行为不变 | 默认状态机仍能序列化、安装和读取快照。 |
 
-## 阶段二：清理默认状态数据层次
+## 阶段二：扩展默认状态数据结构
 
-在状态机存储层泛型化稳定后，再评估是否移除 `IronClusterData`。
+状态机存储层泛型化稳定后，默认 `IronClusterState` 已经直接持有当前验证数据。后续可按服务注册、节点负载、路由拓扑等明确子域继续扩展。
 
 推荐方向：
 
-| 当前 | 目标 |
+| 当前 | 后续方向 |
 |---|---|
-| `IronClusterState { cluster_data: IronClusterData }` | `IronClusterState` 直接持有当前验证数据。 |
-| `IronClusterData { values: BTreeMap<String, String> }` | 合并到 `IronClusterState`，或改为更明确的子域结构。 |
+| `IronClusterState { values: BTreeMap<String, String> }` | 保留最小验证数据，按需要增加更明确的子域结构。 |
 
 注意事项：
 
 | 风险 | 说明 |
 |---|---|
-| JSON 形状变化 | `local_state_machine_data()` 和 snapshot JSON 会从嵌套结构变成扁平结构。 |
+| JSON 形状变化 | 后续新增子域时，`local_state_machine_data()` 和 snapshot JSON 会随状态结构变化。 |
 | 未来兼容 | 当前无持久化，兼容成本较低；以后做持久化前应明确 snapshot 版本。 |
 
 ## 阶段三：状态读取链路泛型化
@@ -178,4 +176,3 @@ pub trait IronRaftStateMachineData:
 | `IronClusterWriteResponse` | 继续作为当前写入响应。 |
 | `IronRaftTcpRpcRequest` | TCP 请求枚举暂不泛型化。 |
 | `IronRaftTcpRpcResponse` | TCP 响应枚举暂不泛型化。 |
-
