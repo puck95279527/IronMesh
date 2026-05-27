@@ -11,6 +11,7 @@ use crate::raft::iron_raft_log_tag::self_tag as self_node_tag;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 
 // 启动 Raft 查询 HTTP 服务。
+#[allow(dead_code)]
 pub async fn start_query_http(
     node_id: u64,
     query_port: u16,

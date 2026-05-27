@@ -3,7 +3,7 @@ mod support;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use iron_core_cluster::control_plane::iron_raft_cluster_manager::IronRaftClusterManager;
+    use iron_core_cluster::IronRaftClusterManager;
     use support::cluster_data_writer::write_current_node_cluster_data;
     use support::cluster_logging::init_cluster_process_logging;
 
