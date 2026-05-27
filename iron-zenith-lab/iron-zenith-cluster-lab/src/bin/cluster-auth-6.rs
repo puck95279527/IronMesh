@@ -10,9 +10,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_cluster_process_logging()?;
     let cluster_manager = IronClusterManager::add_learner("127.0.0.1")?;
 
-    let cluster_handle = cluster_manager.start().await?;
-    let node_id = cluster_handle.current_node_id();
-    let node_addr = cluster_handle.current_node_addr();
-    write_current_node_cluster_data(&cluster_handle, node_id, &node_addr, "normal").await;
-    cluster_handle.wait_forever().await
+    let cluster_handler = cluster_manager.start().await?;
+    let node_id = cluster_handler.current_node_id();
+    let node_addr = cluster_handler.current_node_addr();
+    write_current_node_cluster_data(&cluster_handler, node_id, &node_addr, "normal").await;
+    cluster_handler.wait_forever().await
 }

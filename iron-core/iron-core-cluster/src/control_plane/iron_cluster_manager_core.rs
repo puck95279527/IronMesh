@@ -2,24 +2,24 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::io::{Error as IoError, ErrorKind};
 
-use crate::api::iron_cluster_handle::IronClusterHandle;
 use crate::control_plane::iron_cluster_manager_flow::IronClusterManagerFlow;
 use crate::control_plane::iron_cluster_manager_support::IronClusterManagerSupport;
 use crate::control_plane::iron_cluster_node::{IronClusterNode, IronClusterNodeRole};
+use crate::control_plane::iron_cluster_runtime::IronClusterRuntime;
 use crate::utils::iron_snowflake_id::IronSnowflakeIdGenerator;
 
 // IronMesh 集群管理器。
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct IronClusterManager {
+pub(crate) struct IronClusterManagerCore {
     // 当前集群节点。
     pub current_node: IronClusterNode,
     // 注册节点表，表内节点会作为投票节点加入集群。
     pub boot_nodes: BTreeMap<u64, IronClusterNode>,
 }
 
-impl IronClusterManager {
+impl IronClusterManagerCore {
     // 创建投票节点集群管理器，并从注册节点表按节点 ID 选择当前节点。
-    pub fn add_voter(node_id: u64) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn add_voter(node_id: u64) -> Result<Self, Box<dyn Error>> {
         let boot_nodes = IronClusterManagerSupport::load_cluster_boot()?;
         let current_node = boot_nodes.get(&node_id).cloned().ok_or_else(|| {
             IoError::new(
@@ -35,7 +35,9 @@ impl IronClusterManager {
     }
 
     // 创建学习节点集群管理器，并从配置文件加载注册节点表。
-    pub fn add_learner(advertise_node_ip: impl Into<String>) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn add_learner(
+        advertise_node_ip: impl Into<String>,
+    ) -> Result<Self, Box<dyn Error>> {
         let boot_nodes = IronClusterManagerSupport::load_cluster_boot()?;
         let node_id = IronSnowflakeIdGenerator::next_u64();
         if boot_nodes.contains_key(&node_id) {
@@ -59,7 +61,7 @@ impl IronClusterManager {
     }
 
     // 启动当前节点，等待其完成起盘或加入集群后返回运行句柄。
-    pub async fn start(mut self) -> Result<IronClusterHandle, Box<dyn Error>> {
+    pub(crate) async fn start(mut self) -> Result<IronClusterRuntime, Box<dyn Error>> {
         // 阶段 1：校验当前节点、注册节点表和唯一首次起盘节点。
         IronClusterManagerFlow::validate_topology(&self)?;
 
@@ -85,7 +87,7 @@ impl IronClusterManager {
             IronClusterManagerFlow::join_remaining_boot_nodes(&self, &raft).await?;
         }
 
-        Ok(IronClusterHandle::new(
+        Ok(IronClusterRuntime::new(
             self.current_node.clone(),
             raft,
             state_machine_store,
@@ -94,7 +96,7 @@ impl IronClusterManager {
     }
 
     // 启动当前节点并由调用方显式阻塞等待后台任务。
-    pub async fn run(self) -> Result<(), Box<dyn Error>> {
+    pub(crate) async fn run(self) -> Result<(), Box<dyn Error>> {
         self.start().await?.wait_forever().await
     }
 }

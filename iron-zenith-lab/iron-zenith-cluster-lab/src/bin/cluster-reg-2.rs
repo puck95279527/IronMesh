@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_cluster_process_logging()?;
     let cluster_manager = IronClusterManager::add_voter(2)?;
 
-    let cluster_handle = cluster_manager.start().await?;
-    write_current_node_cluster_data(&cluster_handle, 2, "127.0.0.1:5002", "boot").await;
-    cluster_handle.wait_forever().await
+    let cluster_handler = cluster_manager.start().await?;
+    write_current_node_cluster_data(&cluster_handler, 2, "127.0.0.1:5002", "boot").await;
+    cluster_handler.wait_forever().await
 }

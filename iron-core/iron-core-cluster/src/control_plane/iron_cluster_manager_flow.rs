@@ -7,7 +7,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use crate::control_plane::iron_cluster_manager::IronClusterManager;
+use crate::control_plane::iron_cluster_manager_core::IronClusterManagerCore;
 use crate::control_plane::iron_cluster_manager_support::IronClusterManagerSupport;
 use crate::control_plane::iron_cluster_node::IronClusterNodeRole;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_EMPTY_ROUND_INTERVAL;
@@ -26,7 +26,7 @@ pub struct IronClusterManagerFlow;
 
 impl IronClusterManagerFlow {
     // 阶段 1：校验当前节点、注册节点表和唯一首次起盘节点，避免后续启动阶段带着错误拓扑进入 Raft。
-    pub fn validate_topology(manager: &IronClusterManager) -> Result<(), Box<dyn Error>> {
+    pub fn validate_topology(manager: &IronClusterManagerCore) -> Result<(), Box<dyn Error>> {
         // 注册节点表是集群发现入口，voter 和 learner 都依赖它找到已有集群。
         if manager.boot_nodes.is_empty() {
             return Err(IoError::new(ErrorKind::InvalidInput, "注册节点表不能为空").into());
@@ -89,7 +89,7 @@ impl IronClusterManagerFlow {
 
     // 阶段 2：先绑定当前节点 TCP 端口，再创建 Raft 实例和 TCP 服务对象，确保后续写入 membership 的地址已经可用。
     pub(crate) async fn build_raft_runtime(
-        manager: &mut IronClusterManager,
+        manager: &mut IronClusterManagerCore,
     ) -> Result<
         (
             Raft<IronRaftTypeConfig>,
@@ -140,7 +140,7 @@ impl IronClusterManagerFlow {
 
     // 阶段 3：用阶段 2 已经绑定好的 TCP listener 启动当前节点的后台运行服务，确保 join 前节点已经能被连接。
     pub(crate) fn spawn_runtime_services(
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: Raft<IronRaftTypeConfig>,
         tcp_server: IronRaftTcpServer,
         tcp_listener: TcpListener,
@@ -162,7 +162,7 @@ impl IronClusterManagerFlow {
 
     // 阶段 4：先尝试加入已有集群；只有唯一起盘节点允许初始化新集群。
     pub async fn bootstrap_or_join_cluster(
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<bool, Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);
@@ -211,7 +211,7 @@ impl IronClusterManagerFlow {
 
     // 阶段 5：如果当前节点完成起盘，就把其他注册节点逐个加入为 voter。
     pub async fn join_remaining_boot_nodes(
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(), Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);

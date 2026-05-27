@@ -1,10 +1,10 @@
 use iron_core_cluster::IronClusterDataCommand;
-use iron_core_cluster::IronClusterHandle;
+use iron_core_cluster::IronClusterHandler;
 use std::time::Duration;
 
 // 写入当前验证节点自己的集群业务数据。
 pub(crate) async fn write_current_node_cluster_data(
-    cluster_handle: &IronClusterHandle,
+    cluster_handler: &IronClusterHandler,
     node_id: u64,
     node_addr: &str,
     node_role: &str,
@@ -12,7 +12,7 @@ pub(crate) async fn write_current_node_cluster_data(
     for write_index in 1..=3 {
         let key = format!("cluster/node/{node_id}/write/{write_index}");
         let value = format!("{node_id}|{node_addr}|{node_role}|write={write_index}");
-        let result = cluster_handle
+        let result = cluster_handler
             .write_cluster_data(IronClusterDataCommand::Set { key, value })
             .await;
 

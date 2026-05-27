@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use toml::Value;
 
-use crate::control_plane::iron_cluster_manager::IronClusterManager;
+use crate::control_plane::iron_cluster_manager_core::IronClusterManagerCore;
 use crate::control_plane::iron_cluster_node::IronClusterNode;
 use crate::control_plane::iron_cluster_node::IronClusterNodeRole;
 use crate::raft::iron_raft_constants::BOOT_NODE_JOIN_RETRY_INTERVAL;
@@ -181,7 +181,7 @@ impl IronClusterManagerSupport {
     // 启动可选的调试 HTTP 查询服务后台任务。
     pub fn spawn_debug_http(
         tasks: &mut JoinSet<()>,
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: Raft<IronRaftTypeConfig>,
     ) {
         let node_id = manager.current_node.node_id;
@@ -307,7 +307,7 @@ impl IronClusterManagerSupport {
 
     // 遍历其他注册节点，尝试加入已有集群。
     pub async fn try_join_existing_cluster(
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(bool, bool), Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);
@@ -368,7 +368,7 @@ impl IronClusterManagerSupport {
 
     // 等待当前节点本地 Raft 状态确认已经完成集群加入。
     pub async fn wait_until_local_joined_cluster(
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: &Raft<IronRaftTypeConfig>,
         leader_id: u64,
     ) -> Result<(), Box<dyn Error>> {
@@ -402,7 +402,7 @@ impl IronClusterManagerSupport {
 
     // 初始化只包含当前节点的最小 Raft 集群。
     pub async fn initialize_minimal_cluster(
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(), Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);
@@ -419,7 +419,7 @@ impl IronClusterManagerSupport {
 
     // 等待当前节点成为领导节点(leader)。
     pub async fn wait_until_leader(
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: &Raft<IronRaftTypeConfig>,
     ) -> Result<(), Box<dyn Error>> {
         let self_tag = self_node_tag(manager.current_node.node_id);
@@ -450,7 +450,7 @@ impl IronClusterManagerSupport {
 
     // 将单个注册节点加入集群。
     pub async fn join_one_boot_node(
-        manager: &IronClusterManager,
+        manager: &IronClusterManagerCore,
         raft: &Raft<IronRaftTypeConfig>,
         target_id: u64,
         target_node: &IronClusterNode,

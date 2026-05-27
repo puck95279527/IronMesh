@@ -26,7 +26,7 @@
 | 后台任务 | 可用 | TCP、HTTP、维护任务统一注册进 `JoinSet`，由运行句柄托管。 |
 | Raft 通信 | 可用 | Raft RPC 使用 TCP frame 传输，客户端复用 TCP 连接。 |
 | 写入路径 | 可用 | 非 leader 节点可转发集群业务数据写入到 leader。 |
-| 本地状态读取 | 可用 | `IronClusterHandle` 可读取当前节点已经 apply 的本地状态机数据。 |
+| 本地状态读取 | 可用 | `IronClusterHandler` 可读取当前节点已经 apply 的本地状态机数据。 |
 | learner 断线移除 | 可用 | 基于 Raft TCP 复制连接失败事件移除 learner，不做定时嗅探。 |
 | voter 断线处理 | 保持 | voter 长期不可达时只记录断线日志，不自动从 membership 移除。 |
 | 快照恢复 | 可用 | 完整快照元信息携带 membership 投票配置和节点真实 TCP 地址。 |

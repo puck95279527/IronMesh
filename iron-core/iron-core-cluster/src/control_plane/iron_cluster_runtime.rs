@@ -18,8 +18,8 @@ use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineStore;
 
-// IronMesh 集群运行句柄。
-pub struct IronClusterHandle {
+// IronMesh 集群运行时。
+pub(crate) struct IronClusterRuntime {
     // 当前集群节点信息，用于对外 API 记录操作来源。
     current_node: IronClusterNode,
     // Raft 节点句柄，仅供 crate 内部连接底层 Raft 运行时。
@@ -32,8 +32,8 @@ pub struct IronClusterHandle {
     tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
 }
 
-impl IronClusterHandle {
-    // 创建集群运行句柄。
+impl IronClusterRuntime {
+    // 创建集群运行时。
     pub(crate) fn new(
         current_node: IronClusterNode,
         raft: Raft<IronRaftTypeConfig>,
@@ -50,22 +50,22 @@ impl IronClusterHandle {
     }
 
     // 读取当前节点本地已经 apply 的状态机数据。
-    pub async fn local_state_machine_data(&self) -> IronClusterState {
+    pub(crate) async fn local_state_machine_data(&self) -> IronClusterState {
         self.state_machine_store.state_machine.lock().await.clone()
     }
 
     // 读取当前节点 ID。
-    pub fn current_node_id(&self) -> u64 {
+    pub(crate) fn current_node_id(&self) -> u64 {
         self.current_node.node_id
     }
 
     // 读取当前节点已经解析完成的 TCP 地址。
-    pub fn current_node_addr(&self) -> String {
+    pub(crate) fn current_node_addr(&self) -> String {
         self.current_node.node_addr()
     }
 
     // 写入集群业务数据。
-    pub async fn write_cluster_data(
+    pub(crate) async fn write_cluster_data(
         &self,
         command: IronClusterDataCommand,
     ) -> Result<IronClusterWriteResponse, IronClusterWriteError> {
@@ -229,7 +229,7 @@ impl IronClusterHandle {
     }
 
     // 等待后台任务退出，供实际服务进程显式阻塞使用。
-    pub async fn wait_forever(&self) -> Result<(), Box<dyn Error>> {
+    pub(crate) async fn wait_forever(&self) -> Result<(), Box<dyn Error>> {
         let mut tasks = self.tasks.lock().await;
         match tasks.join_next().await {
             Some(Ok(())) => Err(IoError::new(ErrorKind::Other, "Raft 后台任务已退出").into()),
