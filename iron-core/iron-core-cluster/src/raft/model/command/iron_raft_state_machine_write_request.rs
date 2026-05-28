@@ -1,8 +1,4 @@
-use crate::contract::iron_cluster_entity_model::IronClusterEntityModel;
 use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeObjectRef;
-use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeTagged;
-use crate::data_plane::iron_cluster_entity::IronClusterEntity;
-use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 
 // IronMesh Raft 来源节点索引动作。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -50,87 +46,5 @@ impl<W> IronRaftStateMachineWriteRequest<W> {
     // 创建来源节点数据清理请求。
     pub fn clean_source_node_data(source_node_id: u64) -> Self {
         Self::CleanSourceNodeData { source_node_id }
-    }
-}
-
-impl IronRaftStateMachineWriteRequest<IronClusterWriteRequest<IronClusterEntity>> {
-    // 创建默认集群实体新增写入请求。
-    pub fn cluster_insert<T>(source_node_id: u64, value: T) -> Self
-    where
-        T: IronClusterEntityModel
-            + IronClusterEntityModelSourceNodeTagged
-            + Into<IronClusterEntity>,
-    {
-        let source_node_index_action = Self::track_cluster_source_node_index_action(&value);
-        Self::data(
-            source_node_id,
-            IronClusterWriteRequest::insert(value),
-            source_node_index_action,
-        )
-    }
-
-    // 创建默认集群实体修改写入请求。
-    pub fn cluster_update<T>(source_node_id: u64, value: T) -> Self
-    where
-        T: IronClusterEntityModel
-            + IronClusterEntityModelSourceNodeTagged
-            + Into<IronClusterEntity>,
-    {
-        let source_node_index_action = Self::track_cluster_source_node_index_action(&value);
-        Self::data(
-            source_node_id,
-            IronClusterWriteRequest::update(value),
-            source_node_index_action,
-        )
-    }
-
-    // 创建默认集群实体删除写入请求。
-    pub fn cluster_delete<T>(source_node_id: u64, value: T) -> Self
-    where
-        T: IronClusterEntityModel
-            + IronClusterEntityModelSourceNodeTagged
-            + Into<IronClusterEntity>,
-    {
-        let source_node_index_action = value
-            .source_node_object_ref()
-            .map(|object_ref| IronRaftSourceNodeIndexAction::Remove { object_ref });
-        Self::data(
-            source_node_id,
-            IronClusterWriteRequest::delete(value),
-            source_node_index_action,
-        )
-    }
-
-    // 创建默认集群实体按键删除写入请求。
-    pub fn cluster_delete_key<T>(source_node_id: u64, key: T::Key) -> Self
-    where
-        T: IronClusterEntityModel
-            + IronClusterEntityModelSourceNodeTagged
-            + Into<IronClusterEntity>,
-    {
-        let source_node_index_action = T::source_node_object_ref_from_key(&key)
-            .map(|object_ref| IronRaftSourceNodeIndexAction::Remove { object_ref });
-        Self::data(
-            source_node_id,
-            IronClusterWriteRequest::delete_key::<T>(key),
-            source_node_index_action,
-        )
-    }
-
-    // 创建默认集群实体来源节点索引记录动作。
-    fn track_cluster_source_node_index_action<T>(
-        value: &T,
-    ) -> Option<IronRaftSourceNodeIndexAction<IronClusterWriteRequest<IronClusterEntity>>>
-    where
-        T: IronClusterEntityModel
-            + IronClusterEntityModelSourceNodeTagged
-            + Into<IronClusterEntity>,
-    {
-        value
-            .source_node_object_ref()
-            .map(|object_ref| IronRaftSourceNodeIndexAction::Track {
-                object_ref,
-                delete_request: IronClusterWriteRequest::delete_key::<T>(value.entity_key()),
-            })
     }
 }

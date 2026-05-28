@@ -9,10 +9,12 @@ use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::contract::iron_cluster_entity_model::IronClusterEntityModel;
 use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeTagged;
 use crate::control_plane::iron_cluster_write_router::IronClusterWriteRouter;
+use crate::data_plane::command::iron_cluster_write_request::IronClusterWriteRequest;
+use crate::data_plane::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::data_plane::iron_cluster_entity::IronClusterEntity;
 use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::control::iron_cluster_node::IronClusterNode;
-use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
+use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftSourceNodeIndexAction;
 use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftStateMachineWriteRequest;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
 use crate::raft::storage::iron_raft_state_machine_container::IronRaftStateMachineContainer;
@@ -45,9 +47,11 @@ impl IronClusterRuntime<IronRaftStateMachineContainer<IronClusterState>> {
             + IronClusterEntityModelSourceNodeTagged
             + Into<IronClusterEntity>,
     {
-        self.write_cluster_data(IronRaftStateMachineWriteRequest::cluster_insert(
+        let source_node_index_action = Self::track_cluster_source_node_index_action(&value);
+        self.write_cluster_data(IronRaftStateMachineWriteRequest::data(
             self.current_node_id(),
-            value,
+            IronClusterWriteRequest::insert(value),
+            source_node_index_action,
         ))
         .await
     }
@@ -62,9 +66,11 @@ impl IronClusterRuntime<IronRaftStateMachineContainer<IronClusterState>> {
             + IronClusterEntityModelSourceNodeTagged
             + Into<IronClusterEntity>,
     {
-        self.write_cluster_data(IronRaftStateMachineWriteRequest::cluster_update(
+        let source_node_index_action = Self::track_cluster_source_node_index_action(&value);
+        self.write_cluster_data(IronRaftStateMachineWriteRequest::data(
             self.current_node_id(),
-            value,
+            IronClusterWriteRequest::update(value),
+            source_node_index_action,
         ))
         .await
     }
@@ -79,9 +85,13 @@ impl IronClusterRuntime<IronRaftStateMachineContainer<IronClusterState>> {
             + IronClusterEntityModelSourceNodeTagged
             + Into<IronClusterEntity>,
     {
-        self.write_cluster_data(IronRaftStateMachineWriteRequest::cluster_delete(
+        let source_node_index_action = value
+            .source_node_object_ref()
+            .map(|object_ref| IronRaftSourceNodeIndexAction::Remove { object_ref });
+        self.write_cluster_data(IronRaftStateMachineWriteRequest::data(
             self.current_node_id(),
-            value,
+            IronClusterWriteRequest::delete(value),
+            source_node_index_action,
         ))
         .await
     }
@@ -96,11 +106,31 @@ impl IronClusterRuntime<IronRaftStateMachineContainer<IronClusterState>> {
             + IronClusterEntityModelSourceNodeTagged
             + Into<IronClusterEntity>,
     {
-        self.write_cluster_data(IronRaftStateMachineWriteRequest::cluster_delete_key::<T>(
+        let source_node_index_action = T::source_node_object_ref_from_key(&key)
+            .map(|object_ref| IronRaftSourceNodeIndexAction::Remove { object_ref });
+        self.write_cluster_data(IronRaftStateMachineWriteRequest::data(
             self.current_node_id(),
-            key,
+            IronClusterWriteRequest::delete_key::<T>(key),
+            source_node_index_action,
         ))
         .await
+    }
+
+    // 创建默认集群实体来源节点索引记录动作。
+    fn track_cluster_source_node_index_action<T>(
+        value: &T,
+    ) -> Option<IronRaftSourceNodeIndexAction<IronClusterWriteRequest<IronClusterEntity>>>
+    where
+        T: IronClusterEntityModel
+            + IronClusterEntityModelSourceNodeTagged
+            + Into<IronClusterEntity>,
+    {
+        value
+            .source_node_object_ref()
+            .map(|object_ref| IronRaftSourceNodeIndexAction::Track {
+                object_ref,
+                delete_request: IronClusterWriteRequest::delete_key::<T>(value.entity_key()),
+            })
     }
 }
 

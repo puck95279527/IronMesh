@@ -4,30 +4,20 @@ use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::contract::iron_cluster_entity_model::IronClusterEntityModel;
 use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeTagged;
 use crate::control_plane::iron_cluster_runtime::IronClusterRuntime;
+use crate::data_plane::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::data_plane::iron_cluster_entity::IronClusterEntity;
 use crate::data_plane::iron_cluster_state::IronClusterState;
-use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
-use crate::raft::model::command::iron_raft_source_node_index_write_response::IronRaftSourceNodeIndexWriteResponse;
 use crate::raft::storage::iron_raft_state_machine_container::IronRaftStateMachineContainer;
-use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh 集群运行处理器，是外部调用者操作已启动节点的公开入口。
-pub struct IronClusterHandler<D = IronClusterState>
-where
-    D: IronRaftStateMachineData,
-    D::WriteResponse: IronRaftSourceNodeIndexWriteResponse,
-{
+pub struct IronClusterHandler {
     // 集群内部运行时，真实状态机使用 Raft 总容器承载。
-    pub(crate) inner: IronClusterRuntime<IronRaftStateMachineContainer<D>>,
+    pub(crate) inner: IronClusterRuntime<IronRaftStateMachineContainer<IronClusterState>>,
 }
 
-impl<D> IronClusterHandler<D>
-where
-    D: IronRaftStateMachineData,
-    D::WriteResponse: IronRaftSourceNodeIndexWriteResponse,
-{
+impl IronClusterHandler {
     // 读取当前节点本地已经 apply 的数据面状态。
-    pub async fn local_state_machine_data(&self) -> D {
+    pub async fn local_state_machine_data(&self) -> IronClusterState {
         self.inner.local_state_machine_data().await.cluster_state
     }
 
@@ -45,9 +35,7 @@ where
     pub async fn wait_shutdown(&self) -> Result<(), Box<dyn Error>> {
         self.inner.wait_shutdown().await
     }
-}
 
-impl IronClusterHandler<IronClusterState> {
     // 新增集群业务实体，并为支持来源节点索引的实体打标记。
     pub async fn insert_cluster_data<T>(
         &self,
