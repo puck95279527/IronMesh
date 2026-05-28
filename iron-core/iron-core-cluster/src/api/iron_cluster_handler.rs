@@ -7,21 +7,21 @@ use crate::raft::storage::iron_raft_state_machine_container::IronRaftStateMachin
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh 集群运行处理器，是外部调用者操作已启动节点的公开入口。
-pub struct IronClusterHandler<S = IronRaftStateMachineContainer<IronClusterState>>
+pub struct IronClusterHandler<D = IronClusterState>
 where
-    S: IronRaftStateMachineData,
+    D: IronRaftStateMachineData,
 {
-    // 集群内部运行时，封装控制面和数据面运行期组件。
-    pub(crate) inner: IronClusterRuntime<S>,
+    // 集群内部运行时，真实状态机使用 Raft 总容器承载。
+    pub(crate) inner: IronClusterRuntime<IronRaftStateMachineContainer<D>>,
 }
 
-impl<S> IronClusterHandler<S>
+impl<D> IronClusterHandler<D>
 where
-    S: IronRaftStateMachineData,
+    D: IronRaftStateMachineData,
 {
-    // 1. 读取当前节点本地已经 apply 的状态机数据。
-    pub async fn local_state_machine_data(&self) -> S {
-        self.inner.local_state_machine_data().await
+    // 1. 读取当前节点本地已经 apply 的数据面状态。
+    pub async fn local_state_machine_data(&self) -> D {
+        self.inner.local_state_machine_data().await.cluster_state
     }
 
     // 2. 读取当前节点 ID。
@@ -37,8 +37,8 @@ where
     // 4. 写入集群业务数据。
     pub async fn write_cluster_data(
         &self,
-        request: S::WriteRequest,
-    ) -> Result<S::WriteResponse, IronClusterWriteError> {
+        request: D::WriteRequest,
+    ) -> Result<D::WriteResponse, IronClusterWriteError> {
         self.inner.write_cluster_data(request).await
     }
 
