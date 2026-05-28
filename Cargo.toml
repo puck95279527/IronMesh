@@ -11,8 +11,7 @@ members = [
     "iron-core/iron-core-cluster",
     "iron-protocol/iron-scheme-libs/iron-scheme-business",
     "iron-protocol/iron-scheme-libs/iron-scheme-cluster",
-    # 暂时停用集群实验室 crate，等待新的集群核心 API 重建完成。
-    # "iron-zenith-lab/iron-zenith-cluster-lab",
+    "iron-zenith-lab/iron-zenith-cluster-lab",
 ]
 
 [workspace.package]
@@ -24,6 +23,7 @@ edition = "2024"
 axum = "0.8"
 
 # 异步运行时依赖。
+futures-util = "0.3"
 # 统一启用网络、任务、信号、时间和异步 IO 能力，避免子 crate 分散声明 tokio feature。
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 # codec 用于 TCP 字节流和业务帧之间的边界编解码。
@@ -45,12 +45,13 @@ serde_json = "1.0"
 toml = "1.1.2"
 
 # 错误处理依赖。
+anyhow = "1"
 thiserror = "2"
 
 # 日志与可观测性依赖。
 tracing = "0.1"
-# env-filter 用于入口进程按环境过滤日志，fmt 用于统一文本日志输出。
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+# env-filter 用于入口进程按环境过滤日志，fmt 用于统一文本日志输出，local-time 用于本地时间戳。
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "local-time"] }
 
 # workspace 内部 crate。
 iron-core-cluster = { path = "iron-core/iron-core-cluster" }
