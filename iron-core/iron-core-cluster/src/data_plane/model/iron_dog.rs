@@ -1,7 +1,18 @@
+use crate::data_plane::iron_cluster_entity::IronClusterEntity;
+
 // IronMesh 集群验证用狗数据模型。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct IronDog {
     pub id: u64,       // 狗数据唯一标识，用作状态机键。
     pub name: String,  // 狗数据名称。
     pub color: String, // 狗数据颜色描述。
+}
+
+impl IronClusterEntity for IronDog {
+    type Key = u64;
+
+    // 读取狗数据键。
+    fn entity_key(&self) -> Self::Key {
+        self.id
+    }
 }

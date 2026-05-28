@@ -7,6 +7,7 @@ pub(crate) mod utils;
 
 pub use api::IronCat;
 pub use api::IronClusterEntity;
+pub use api::IronClusterEntityValue;
 pub use api::IronClusterHandler;
 pub use api::IronClusterManager;
 pub use api::IronClusterNode;

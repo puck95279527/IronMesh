@@ -4,6 +4,7 @@ pub(crate) mod iron_cluster_manager;
 pub(crate) mod iron_cluster_write_error;
 
 pub use crate::data_plane::iron_cluster_entity::IronClusterEntity;
+pub use crate::data_plane::iron_cluster_entity_value::IronClusterEntityValue;
 pub use crate::data_plane::iron_cluster_state::IronClusterState;
 pub use crate::data_plane::model::iron_cat::IronCat;
 pub use crate::data_plane::model::iron_dog::IronDog;
