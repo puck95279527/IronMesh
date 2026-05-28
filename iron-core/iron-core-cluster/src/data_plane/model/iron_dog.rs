@@ -1,4 +1,4 @@
-use crate::data_plane::iron_cluster_entity::IronClusterEntity;
+use crate::data_plane::iron_cluster_entity::IronClusterEntityModel;
 
 // IronMesh 集群验证用狗数据模型。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -8,7 +8,7 @@ pub struct IronDog {
     pub color: String, // 狗数据颜色描述。
 }
 
-impl IronClusterEntity for IronDog {
+impl IronClusterEntityModel for IronDog {
     type Key = u64;
 
     // 读取狗数据键。

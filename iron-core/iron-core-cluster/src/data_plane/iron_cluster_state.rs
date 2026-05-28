@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::data_plane::iron_cluster_entity::IronClusterEntity;
-use crate::data_plane::iron_cluster_entity_value::IronClusterEntityValue;
+use crate::data_plane::iron_cluster_entity::IronClusterEntityModel;
 use crate::data_plane::model::iron_cat::IronCat;
 use crate::data_plane::model::iron_dog::IronDog;
 use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
@@ -16,8 +16,8 @@ pub struct IronClusterState {
 }
 
 impl IronRaftStateMachineData for IronClusterState {
-    type WriteRequest = IronClusterWriteRequest<IronClusterEntityValue>;
-    type WriteResponse = IronClusterWriteResponse<IronClusterEntityValue>;
+    type WriteRequest = IronClusterWriteRequest<IronClusterEntity>;
+    type WriteResponse = IronClusterWriteResponse<IronClusterEntity>;
 
     // 应用 Raft 写入请求到默认集群状态机。
     fn apply_raft_request(&mut self, request: Self::WriteRequest) -> Self::WriteResponse {
@@ -33,42 +33,42 @@ impl IronClusterState {
     // 新增集群数据实体。
     fn insert_entity(
         &mut self,
-        value: IronClusterEntityValue,
-    ) -> IronClusterWriteResponse<IronClusterEntityValue> {
+        value: IronClusterEntity,
+    ) -> IronClusterWriteResponse<IronClusterEntity> {
         match value {
-            IronClusterEntityValue::Cat(value) => {
+            IronClusterEntity::Cat(value) => {
                 let key = value.entity_key();
                 if let Some(existing_value) = self.cats.get(&key).cloned() {
                     IronClusterWriteResponse {
                         applied: false,
-                        value: Some(IronClusterEntityValue::Cat(existing_value.clone())),
-                        previous_value: Some(IronClusterEntityValue::Cat(existing_value)),
+                        value: Some(IronClusterEntity::Cat(existing_value.clone())),
+                        previous_value: Some(IronClusterEntity::Cat(existing_value)),
                         message: Some(format!("猫数据键已存在，新增失败: {key}")),
                     }
                 } else {
                     self.cats.insert(key, value.clone());
                     IronClusterWriteResponse {
                         applied: true,
-                        value: Some(IronClusterEntityValue::Cat(value)),
+                        value: Some(IronClusterEntity::Cat(value)),
                         previous_value: None,
                         message: None,
                     }
                 }
             }
-            IronClusterEntityValue::Dog(value) => {
+            IronClusterEntity::Dog(value) => {
                 let key = value.entity_key();
                 if let Some(existing_value) = self.dogs.get(&key).cloned() {
                     IronClusterWriteResponse {
                         applied: false,
-                        value: Some(IronClusterEntityValue::Dog(existing_value.clone())),
-                        previous_value: Some(IronClusterEntityValue::Dog(existing_value)),
+                        value: Some(IronClusterEntity::Dog(existing_value.clone())),
+                        previous_value: Some(IronClusterEntity::Dog(existing_value)),
                         message: Some(format!("狗数据键已存在，新增失败: {key}")),
                     }
                 } else {
                     self.dogs.insert(key, value.clone());
                     IronClusterWriteResponse {
                         applied: true,
-                        value: Some(IronClusterEntityValue::Dog(value)),
+                        value: Some(IronClusterEntity::Dog(value)),
                         previous_value: None,
                         message: None,
                     }
@@ -80,17 +80,17 @@ impl IronClusterState {
     // 修改集群数据实体。
     fn update_entity(
         &mut self,
-        value: IronClusterEntityValue,
-    ) -> IronClusterWriteResponse<IronClusterEntityValue> {
+        value: IronClusterEntity,
+    ) -> IronClusterWriteResponse<IronClusterEntity> {
         match value {
-            IronClusterEntityValue::Cat(value) => {
+            IronClusterEntity::Cat(value) => {
                 let key = value.entity_key();
                 if let Some(previous_value) = self.cats.get(&key).cloned() {
                     self.cats.insert(key, value.clone());
                     IronClusterWriteResponse {
                         applied: true,
-                        value: Some(IronClusterEntityValue::Cat(value)),
-                        previous_value: Some(IronClusterEntityValue::Cat(previous_value)),
+                        value: Some(IronClusterEntity::Cat(value)),
+                        previous_value: Some(IronClusterEntity::Cat(previous_value)),
                         message: None,
                     }
                 } else {
@@ -102,14 +102,14 @@ impl IronClusterState {
                     }
                 }
             }
-            IronClusterEntityValue::Dog(value) => {
+            IronClusterEntity::Dog(value) => {
                 let key = value.entity_key();
                 if let Some(previous_value) = self.dogs.get(&key).cloned() {
                     self.dogs.insert(key, value.clone());
                     IronClusterWriteResponse {
                         applied: true,
-                        value: Some(IronClusterEntityValue::Dog(value)),
-                        previous_value: Some(IronClusterEntityValue::Dog(previous_value)),
+                        value: Some(IronClusterEntity::Dog(value)),
+                        previous_value: Some(IronClusterEntity::Dog(previous_value)),
                         message: None,
                     }
                 } else {
@@ -127,16 +127,16 @@ impl IronClusterState {
     // 删除集群数据实体。
     fn delete_entity(
         &mut self,
-        value: IronClusterEntityValue,
-    ) -> IronClusterWriteResponse<IronClusterEntityValue> {
+        value: IronClusterEntity,
+    ) -> IronClusterWriteResponse<IronClusterEntity> {
         match value {
-            IronClusterEntityValue::Cat(value) => {
+            IronClusterEntity::Cat(value) => {
                 let key = value.entity_key();
                 if let Some(previous_value) = self.cats.remove(&key) {
                     IronClusterWriteResponse {
                         applied: true,
                         value: None,
-                        previous_value: Some(IronClusterEntityValue::Cat(previous_value)),
+                        previous_value: Some(IronClusterEntity::Cat(previous_value)),
                         message: None,
                     }
                 } else {
@@ -148,13 +148,13 @@ impl IronClusterState {
                     }
                 }
             }
-            IronClusterEntityValue::Dog(value) => {
+            IronClusterEntity::Dog(value) => {
                 let key = value.entity_key();
                 if let Some(previous_value) = self.dogs.remove(&key) {
                     IronClusterWriteResponse {
                         applied: true,
                         value: None,
-                        previous_value: Some(IronClusterEntityValue::Dog(previous_value)),
+                        previous_value: Some(IronClusterEntity::Dog(previous_value)),
                         message: None,
                     }
                 } else {
