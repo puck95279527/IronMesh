@@ -88,6 +88,13 @@ impl IronTcpClient {
     // 清空缓存连接。
     async fn clear_cached_stream(&self) {
         let mut guard = self.cached_stream.lock().await;
+        if guard.is_some() {
+            tracing::debug!(
+                target_node_id = ?self.target_node_id,
+                target_addr = %self.target_addr,
+                "[Iron] [cluster] Raft TCP 缓存连接已清空"
+            );
+        }
         *guard = None;
     }
 
@@ -98,7 +105,18 @@ impl IronTcpClient {
     ) -> Result<IronTcpResponse, io::Error> {
         let mut guard = self.cached_stream.lock().await;
         if guard.is_none() {
+            tracing::debug!(
+                target_node_id = ?self.target_node_id,
+                target_addr = %self.target_addr,
+                "[Iron] [cluster] Raft TCP 缓存连接不存在，创建新连接"
+            );
             *guard = Some(self.connect_new_stream().await?);
+        } else {
+            tracing::debug!(
+                target_node_id = ?self.target_node_id,
+                target_addr = %self.target_addr,
+                "[Iron] [cluster] Raft TCP 复用缓存连接"
+            );
         }
 
         let stream = guard.as_mut().expect("cached stream must exist");
@@ -106,6 +124,12 @@ impl IronTcpClient {
         let request = IronTcpFrameCodec::encode_request(request)?;
 
         if let Err(error) = framed.send(request).await {
+            tracing::debug!(
+                target_node_id = ?self.target_node_id,
+                target_addr = %self.target_addr,
+                %error,
+                "[Iron] [cluster] Raft TCP 写入失败，清空缓存连接"
+            );
             *guard = None;
             return Err(error);
         }
@@ -113,10 +137,21 @@ impl IronTcpClient {
         let response = match framed.next().await {
             Some(Ok(response)) => response,
             Some(Err(error)) => {
+                tracing::debug!(
+                    target_node_id = ?self.target_node_id,
+                    target_addr = %self.target_addr,
+                    %error,
+                    "[Iron] [cluster] Raft TCP 读取失败，清空缓存连接"
+                );
                 *guard = None;
                 return Err(error);
             }
             None => {
+                tracing::debug!(
+                    target_node_id = ?self.target_node_id,
+                    target_addr = %self.target_addr,
+                    "[Iron] [cluster] Raft TCP 连接提前关闭，清空缓存连接"
+                );
                 *guard = None;
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
@@ -135,13 +170,27 @@ impl IronTcpClient {
     ) -> Result<IronTcpResponse, io::Error> {
         match self.send_raft_request_once(&request).await {
             Ok(response) => Ok(response),
-            Err(_) => match self.send_raft_request_once(&request).await {
-                Ok(response) => Ok(response),
-                Err(error) => {
-                    self.report_raft_rpc_failure(&error).await;
-                    Err(error)
+            Err(error) => {
+                tracing::debug!(
+                    target_node_id = ?self.target_node_id,
+                    target_addr = %self.target_addr,
+                    %error,
+                    "[Iron] [cluster] Raft TCP 请求首次失败，准备重试一次"
+                );
+                match self.send_raft_request_once(&request).await {
+                    Ok(response) => Ok(response),
+                    Err(error) => {
+                        tracing::debug!(
+                            target_node_id = ?self.target_node_id,
+                            target_addr = %self.target_addr,
+                            %error,
+                            "[Iron] [cluster] Raft TCP 请求重试失败，上报断线事件"
+                        );
+                        self.report_raft_rpc_failure(&error).await;
+                        Err(error)
+                    }
                 }
-            },
+            }
         }
     }
 
