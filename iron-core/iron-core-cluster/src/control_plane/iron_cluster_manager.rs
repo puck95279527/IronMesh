@@ -8,6 +8,7 @@ use tokio::net::TcpListener;
 use crate::control_plane::IronClusterManagerSupport;
 use crate::control_plane::IronClusterNode;
 use crate::control_plane::IronClusterNodeRole;
+use crate::query::iron_raft_query::start_query_http_with_addr;
 use crate::raft::IronTypeConfig;
 use crate::raft::network::IronNetworkFactory;
 use crate::raft::network::IronTcpServer;
@@ -89,6 +90,18 @@ impl IronClusterManager {
             tcp_addr = %tcp_addr,
             "[Iron] [cluster] Raft TCP 服务已启动"
         );
+
+        if let Some(http_debug_addr) = self.current_node.http_debug_addr.clone() {
+            let node_id = self.current_node.node_id;
+            let query_raft = raft.clone();
+            tokio::spawn(async move {
+                if let Err(error) =
+                    start_query_http_with_addr(node_id, http_debug_addr, query_raft).await
+                {
+                    tracing::warn!(%error, "[Iron] [cluster] Raft 查询 HTTP 服务退出");
+                }
+            });
+        }
 
         if self.current_node.is_boot_node {
             let mut members = BTreeMap::new();

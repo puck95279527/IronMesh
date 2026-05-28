@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
+axum.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
 openraft.workspace = true
