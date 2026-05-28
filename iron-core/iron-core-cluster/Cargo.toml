@@ -8,10 +8,3 @@ name = "iron_core_cluster"
 path = "src/lib.rs"
 
 [dependencies]
-axum.workspace = true
-openraft.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tokio.workspace = true
-toml.workspace = true
-tracing.workspace = true

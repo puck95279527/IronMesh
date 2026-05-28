@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["iron-core/iron-core-cluster-old"]
 members = [
     "iron-gateway",
     "iron-business/iron-service-auth",
@@ -10,7 +11,8 @@ members = [
     "iron-core/iron-core-cluster",
     "iron-protocol/iron-scheme-libs/iron-scheme-business",
     "iron-protocol/iron-scheme-libs/iron-scheme-cluster",
-    "iron-zenith-lab/iron-zenith-cluster-lab",
+    # 暂时停用集群实验室 crate，等待新的集群核心 API 重建完成。
+    # "iron-zenith-lab/iron-zenith-cluster-lab",
 ]
 
 [workspace.package]
