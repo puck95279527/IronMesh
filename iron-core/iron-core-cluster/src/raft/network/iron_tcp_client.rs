@@ -86,6 +86,20 @@ impl IronTcpClient {
         }
     }
 
+    // 发送加入集群请求。
+    pub async fn join_cluster(&self, node_id: u64, node_addr: String) -> Result<(), io::Error> {
+        match self
+            .send_request(IronTcpRequest::JoinCluster { node_id, node_addr })
+            .await?
+        {
+            IronTcpResponse::JoinCluster(result) => result.map_err(io::Error::other),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unexpected join cluster response",
+            )),
+        }
+    }
+
     // 创建网络错误。
     fn network_error(
         error: &(impl std::error::Error + 'static),

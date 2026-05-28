@@ -50,6 +50,8 @@ thiserror = "2"
 
 # 日志与可观测性依赖。
 tracing = "0.1"
+# time 用于日志输出固定宽度本地时间格式。
+time = { version = "0.3", features = ["macros"] }
 # env-filter 用于入口进程按环境过滤日志，fmt 用于统一文本日志输出，local-time 用于本地时间戳。
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "local-time"] }
 
