@@ -1,4 +1,5 @@
 use crate::data_plane::iron_cluster_entity::IronClusterEntity;
+use crate::data_plane::iron_cluster_entity::IronClusterEntityModel;
 
 // IronMesh 集群写入请求模型。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -10,17 +11,17 @@ pub enum IronClusterWriteRequest<V> {
 
 impl IronClusterWriteRequest<IronClusterEntity> {
     // 创建默认集群实体新增请求。
-    pub fn insert(value: impl Into<IronClusterEntity>) -> Self {
+    pub fn insert(value: impl IronClusterEntityModel) -> Self {
         Self::Insert(value.into())
     }
 
     // 创建默认集群实体修改请求。
-    pub fn update(value: impl Into<IronClusterEntity>) -> Self {
+    pub fn update(value: impl IronClusterEntityModel) -> Self {
         Self::Update(value.into())
     }
 
     // 创建默认集群实体删除请求。
-    pub fn delete(value: impl Into<IronClusterEntity>) -> Self {
+    pub fn delete(value: impl IronClusterEntityModel) -> Self {
         Self::Delete(value.into())
     }
 }

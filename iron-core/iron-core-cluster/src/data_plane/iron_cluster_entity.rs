@@ -1,8 +1,8 @@
 use crate::data_plane::model::iron_cat::IronCat;
 use crate::data_plane::model::iron_dog::IronDog;
 
-// IronMesh 集群实体模型约束，用于要求数据面实体提供稳定键。
-pub trait IronClusterEntityModel {
+// IronMesh 集群实体模型约束，用于要求数据面实体能提供键并能进入集群实体总类型。
+pub trait IronClusterEntityModel: Into<IronClusterEntity> {
     // 实体键类型。
     type Key;
 
@@ -15,30 +15,4 @@ pub trait IronClusterEntityModel {
 pub enum IronClusterEntity {
     Cat(IronCat), // 猫数据实体。
     Dog(IronDog), // 狗数据实体。
-}
-
-impl IronClusterEntityModel for IronClusterEntity {
-    type Key = u64;
-
-    // 读取集群实体键。
-    fn entity_key(&self) -> Self::Key {
-        match self {
-            Self::Cat(value) => value.entity_key(),
-            Self::Dog(value) => value.entity_key(),
-        }
-    }
-}
-
-impl From<IronCat> for IronClusterEntity {
-    // 将猫数据转换为集群实体。
-    fn from(value: IronCat) -> Self {
-        Self::Cat(value)
-    }
-}
-
-impl From<IronDog> for IronClusterEntity {
-    // 将狗数据转换为集群实体。
-    fn from(value: IronDog) -> Self {
-        Self::Dog(value)
-    }
 }

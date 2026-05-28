@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use crate::data_plane::iron_cluster_entity::IronClusterEntity;
-use crate::data_plane::iron_cluster_entity::IronClusterEntityModel;
 use crate::data_plane::model::iron_cat::IronCat;
 use crate::data_plane::model::iron_dog::IronDog;
 use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
@@ -11,7 +10,7 @@ use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData
 // IronMesh 集群状态数据模型。
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct IronClusterState {
-    pub cats: BTreeMap<u64, IronCat>, // 集群猫数据的最小键值存储。
+    pub cats: BTreeMap<u32, IronCat>, // 集群猫数据的最小键值存储。
     pub dogs: BTreeMap<u64, IronDog>, // 集群狗数据的最小键值存储。
 }
 
@@ -37,7 +36,7 @@ impl IronClusterState {
     ) -> IronClusterWriteResponse<IronClusterEntity> {
         match value {
             IronClusterEntity::Cat(value) => {
-                let key = value.entity_key();
+                let key = value.id;
                 if let Some(existing_value) = self.cats.get(&key).cloned() {
                     IronClusterWriteResponse {
                         applied: false,
@@ -56,7 +55,7 @@ impl IronClusterState {
                 }
             }
             IronClusterEntity::Dog(value) => {
-                let key = value.entity_key();
+                let key = value.id;
                 if let Some(existing_value) = self.dogs.get(&key).cloned() {
                     IronClusterWriteResponse {
                         applied: false,
@@ -84,7 +83,7 @@ impl IronClusterState {
     ) -> IronClusterWriteResponse<IronClusterEntity> {
         match value {
             IronClusterEntity::Cat(value) => {
-                let key = value.entity_key();
+                let key = value.id;
                 if let Some(previous_value) = self.cats.get(&key).cloned() {
                     self.cats.insert(key, value.clone());
                     IronClusterWriteResponse {
@@ -103,7 +102,7 @@ impl IronClusterState {
                 }
             }
             IronClusterEntity::Dog(value) => {
-                let key = value.entity_key();
+                let key = value.id;
                 if let Some(previous_value) = self.dogs.get(&key).cloned() {
                     self.dogs.insert(key, value.clone());
                     IronClusterWriteResponse {
@@ -131,7 +130,7 @@ impl IronClusterState {
     ) -> IronClusterWriteResponse<IronClusterEntity> {
         match value {
             IronClusterEntity::Cat(value) => {
-                let key = value.entity_key();
+                let key = value.id;
                 if let Some(previous_value) = self.cats.remove(&key) {
                     IronClusterWriteResponse {
                         applied: true,
@@ -149,7 +148,7 @@ impl IronClusterState {
                 }
             }
             IronClusterEntity::Dog(value) => {
-                let key = value.entity_key();
+                let key = value.id;
                 if let Some(previous_value) = self.dogs.remove(&key) {
                     IronClusterWriteResponse {
                         applied: true,

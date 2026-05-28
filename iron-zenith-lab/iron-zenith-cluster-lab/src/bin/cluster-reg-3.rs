@@ -12,14 +12,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cluster_handler = cluster_manager.start().await?;
     cluster_handler
         .write_cluster_data(IronClusterWriteRequest::insert(IronCat {
-            id: cluster_handler.current_node_id(),
+            id: cluster_handler.current_node_id() as u32,
             name: cluster_handler.current_node_addr(),
             age: "boot".to_string(),
         }))
         .await?;
     cluster_handler
         .write_cluster_data(IronClusterWriteRequest::delete(IronCat {
-            id: cluster_handler.current_node_id(),
+            id: cluster_handler.current_node_id() as u32,
             name: cluster_handler.current_node_addr(),
             age: "delete".to_string(),
         }))
