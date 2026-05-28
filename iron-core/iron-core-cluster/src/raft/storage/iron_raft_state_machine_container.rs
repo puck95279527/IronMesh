@@ -1,9 +1,24 @@
 use std::collections::BTreeMap;
 
 use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeObjectRef;
+use crate::data_plane::iron_cluster_entity::IronClusterEntity;
+use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftSourceNodeIndexAction;
 use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftStateMachineWriteRequest;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
+
+// IronMesh Raft 容器索引写入响应判断。
+pub trait IronRaftSourceNodeIndexWriteResponse {
+    // 判断写入响应是否代表状态机实际发生变更。
+    fn source_node_index_applied(&self) -> bool;
+}
+
+impl IronRaftSourceNodeIndexWriteResponse for IronClusterWriteResponse<IronClusterEntity> {
+    // 判断默认集群写入响应是否实际修改了数据。
+    fn source_node_index_applied(&self) -> bool {
+        self.applied
+    }
+}
 
 // IronMesh Raft 来源节点索引记录。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -100,7 +115,7 @@ where
         let mut affected_count = 0usize;
         for (_, record) in objects {
             let response = self.cluster_state.apply_raft_request(record.delete_request);
-            if D::write_response_applied(&response) {
+            if response.source_node_index_applied() {
                 affected_count += 1;
                 self.remove_source_node_object(&record.object_ref);
             }
@@ -118,6 +133,7 @@ where
 impl<D> IronRaftStateMachineData for IronRaftStateMachineContainer<D>
 where
     D: IronRaftStateMachineData,
+    D::WriteResponse: IronRaftSourceNodeIndexWriteResponse,
 {
     type WriteRequest = IronRaftStateMachineWriteRequest<D::WriteRequest>;
     type WriteResponse = D::WriteResponse;
@@ -131,7 +147,7 @@ where
                 source_node_index_action,
             } => {
                 let response = self.cluster_state.apply_raft_request(data_request);
-                if D::write_response_applied(&response) {
+                if response.source_node_index_applied() {
                     if let Some(action) = source_node_index_action {
                         self.apply_source_node_index_action(source_node_id, action);
                     }
@@ -145,10 +161,6 @@ where
     }
 
     // 判断容器写入响应是否代表状态机实际发生变更。
-    fn write_response_applied(response: &Self::WriteResponse) -> bool {
-        D::write_response_applied(response)
-    }
-
     // 创建默认来源节点数据清理请求。
     fn clean_source_node_data_request(source_node_id: u64) -> Option<Self::WriteRequest> {
         Some(IronRaftStateMachineWriteRequest::clean_source_node_data(

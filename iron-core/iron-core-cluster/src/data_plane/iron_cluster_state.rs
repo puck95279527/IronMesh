@@ -26,11 +26,6 @@ impl IronRaftStateMachineData for IronClusterState {
             IronClusterWriteRequest::Delete(value) => self.delete_entity(value),
         }
     }
-
-    // 判断默认集群状态机写入响应是否实际修改了数据。
-    fn write_response_applied(response: &Self::WriteResponse) -> bool {
-        response.applied
-    }
 }
 
 impl IronClusterState {
