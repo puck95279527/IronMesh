@@ -28,3 +28,17 @@ impl IronClusterEntityModel for IronClusterEntity {
         }
     }
 }
+
+impl From<IronCat> for IronClusterEntity {
+    // 将猫数据转换为集群实体。
+    fn from(value: IronCat) -> Self {
+        Self::Cat(value)
+    }
+}
+
+impl From<IronDog> for IronClusterEntity {
+    // 将狗数据转换为集群实体。
+    fn from(value: IronDog) -> Self {
+        Self::Dog(value)
+    }
+}

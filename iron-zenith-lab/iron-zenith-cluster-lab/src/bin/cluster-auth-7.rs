@@ -1,7 +1,7 @@
 // 启动认证 Raft 验证节点。
 mod support;
 
-use iron_core_cluster::{IronCat, IronClusterEntity, IronClusterManager, IronClusterWriteRequest};
+use iron_core_cluster::{IronCat, IronClusterManager, IronClusterWriteRequest};
 use support::cluster_logging::init_cluster_process_logging;
 
 #[tokio::main]
@@ -11,22 +11,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cluster_handler = cluster_manager.start().await?;
     cluster_handler
-        .write_cluster_data(IronClusterWriteRequest::Insert(IronClusterEntity::Cat(
-            IronCat {
-                id: cluster_handler.current_node_id(),
-                name: cluster_handler.current_node_addr(),
-                age: "normal".to_string(),
-            },
-        )))
+        .write_cluster_data(IronClusterWriteRequest::insert(IronCat {
+            id: cluster_handler.current_node_id(),
+            name: cluster_handler.current_node_addr(),
+            age: "normal".to_string(),
+        }))
         .await?;
     cluster_handler
-        .write_cluster_data(IronClusterWriteRequest::Delete(IronClusterEntity::Cat(
-            IronCat {
-                id: cluster_handler.current_node_id(),
-                name: cluster_handler.current_node_addr(),
-                age: "delete".to_string(),
-            },
-        )))
+        .write_cluster_data(IronClusterWriteRequest::delete(IronCat {
+            id: cluster_handler.current_node_id(),
+            name: cluster_handler.current_node_addr(),
+            age: "delete".to_string(),
+        }))
         .await?;
     cluster_handler.wait_shutdown().await
 }
