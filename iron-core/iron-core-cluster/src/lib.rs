@@ -22,6 +22,7 @@ pub use api::IronClusterWriteResponse;
 pub use api::IronDog;
 pub use api::IronRaftSourceNodeIndexAction;
 pub use api::IronRaftSourceNodeIndexRecord;
+pub use api::IronRaftSourceNodeIndexWriteResponse;
 pub use api::IronRaftStateMachineContainer;
 pub use api::IronRaftStateMachineData;
 pub use api::IronRaftStateMachineWriteRequest;

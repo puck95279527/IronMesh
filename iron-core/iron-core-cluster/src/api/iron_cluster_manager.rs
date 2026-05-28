@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use crate::api::iron_cluster_handler::IronClusterHandler;
 use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::control::iron_cluster_manager_core::IronClusterManagerCore;
+use crate::raft::model::command::iron_raft_source_node_index_write_response::IronRaftSourceNodeIndexWriteResponse;
 use crate::raft::storage::iron_raft_state_machine_container::IronRaftStateMachineContainer;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
@@ -12,6 +13,7 @@ use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData
 pub struct IronClusterManager<D = IronClusterState>
 where
     D: IronRaftStateMachineData,
+    D::WriteResponse: IronRaftSourceNodeIndexWriteResponse,
 {
     // 集群内部管理器，封装具体 Raft 控制流程。
     inner: IronClusterManagerCore,
@@ -34,6 +36,7 @@ impl IronClusterManager<IronClusterState> {
 impl<D> IronClusterManager<D>
 where
     D: IronRaftStateMachineData,
+    D::WriteResponse: IronRaftSourceNodeIndexWriteResponse,
 {
     // 创建指定数据面状态机类型的投票节点集群管理器。
     pub fn add_voter_with_state(node_id: u64) -> Result<Self, Box<dyn Error>> {

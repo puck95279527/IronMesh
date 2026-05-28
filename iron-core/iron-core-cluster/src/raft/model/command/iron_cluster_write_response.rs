@@ -1,3 +1,5 @@
+use crate::raft::model::command::iron_raft_source_node_index_write_response::IronRaftSourceNodeIndexWriteResponse;
+
 // IronMesh 集群写入响应模型。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct IronClusterWriteResponse<V> {
@@ -16,5 +18,12 @@ impl<V> Default for IronClusterWriteResponse<V> {
             previous_value: None,
             message: None,
         }
+    }
+}
+
+impl<V> IronRaftSourceNodeIndexWriteResponse for IronClusterWriteResponse<V> {
+    // 判断集群写入响应是否实际修改了数据。
+    fn source_node_index_applied(&self) -> bool {
+        self.applied
     }
 }

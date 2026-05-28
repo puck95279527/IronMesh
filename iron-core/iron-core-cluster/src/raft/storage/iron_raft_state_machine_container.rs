@@ -1,24 +1,10 @@
 use std::collections::BTreeMap;
 
 use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeObjectRef;
-use crate::data_plane::iron_cluster_entity::IronClusterEntity;
-use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
+use crate::raft::model::command::iron_raft_source_node_index_write_response::IronRaftSourceNodeIndexWriteResponse;
 use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftSourceNodeIndexAction;
 use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftStateMachineWriteRequest;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
-
-// IronMesh Raft 容器索引写入响应判断。
-pub trait IronRaftSourceNodeIndexWriteResponse {
-    // 判断写入响应是否代表状态机实际发生变更。
-    fn source_node_index_applied(&self) -> bool;
-}
-
-impl IronRaftSourceNodeIndexWriteResponse for IronClusterWriteResponse<IronClusterEntity> {
-    // 判断默认集群写入响应是否实际修改了数据。
-    fn source_node_index_applied(&self) -> bool {
-        self.applied
-    }
-}
 
 // IronMesh Raft 来源节点索引记录。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -58,6 +44,7 @@ where
 impl<D> IronRaftStateMachineContainer<D>
 where
     D: IronRaftStateMachineData,
+    D::WriteResponse: IronRaftSourceNodeIndexWriteResponse,
 {
     // 根据索引动作维护来源节点索引。
     fn apply_source_node_index_action(
@@ -160,7 +147,6 @@ where
         }
     }
 
-    // 判断容器写入响应是否代表状态机实际发生变更。
     // 创建默认来源节点数据清理请求。
     fn clean_source_node_data_request(source_node_id: u64) -> Option<Self::WriteRequest> {
         Some(IronRaftStateMachineWriteRequest::clean_source_node_data(

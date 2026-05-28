@@ -7,6 +7,7 @@ use crate::control_plane::iron_cluster_runtime::IronClusterRuntime;
 use crate::data_plane::iron_cluster_entity::IronClusterEntity;
 use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
+use crate::raft::model::command::iron_raft_source_node_index_write_response::IronRaftSourceNodeIndexWriteResponse;
 use crate::raft::storage::iron_raft_state_machine_container::IronRaftStateMachineContainer;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
@@ -14,6 +15,7 @@ use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData
 pub struct IronClusterHandler<D = IronClusterState>
 where
     D: IronRaftStateMachineData,
+    D::WriteResponse: IronRaftSourceNodeIndexWriteResponse,
 {
     // 集群内部运行时，真实状态机使用 Raft 总容器承载。
     pub(crate) inner: IronClusterRuntime<IronRaftStateMachineContainer<D>>,
@@ -22,6 +24,7 @@ where
 impl<D> IronClusterHandler<D>
 where
     D: IronRaftStateMachineData,
+    D::WriteResponse: IronRaftSourceNodeIndexWriteResponse,
 {
     // 读取当前节点本地已经 apply 的数据面状态。
     pub async fn local_state_machine_data(&self) -> D {

@@ -14,6 +14,7 @@ pub use crate::raft::control::iron_cluster_node::IronClusterNode;
 pub use crate::raft::control::iron_cluster_node::IronClusterNodeRole;
 pub use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 pub use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
+pub use crate::raft::model::command::iron_raft_source_node_index_write_response::IronRaftSourceNodeIndexWriteResponse;
 pub use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftSourceNodeIndexAction;
 pub use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftStateMachineWriteRequest;
 pub use crate::raft::storage::iron_raft_state_machine_container::IronRaftSourceNodeIndexRecord;
