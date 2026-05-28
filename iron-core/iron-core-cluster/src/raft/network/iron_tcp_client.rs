@@ -19,9 +19,11 @@ use openraft::raft::SnapshotResponse;
 use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
 use tokio::net::TcpStream;
+use tokio::sync::mpsc;
 use tokio_util::codec::Framed;
 
 use crate::raft::IronTypeConfig;
+use crate::raft::network::iron_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::protocol::IronTcpFrameCodec;
 use crate::raft::network::protocol::IronTcpRequest;
 use crate::raft::network::protocol::IronTcpResponse;
@@ -29,13 +31,32 @@ use crate::raft::network::protocol::IronTcpResponse;
 // IronMesh Raft TCP 客户端。
 #[derive(Clone, Debug, Default)]
 pub struct IronTcpClient {
-    pub target_addr: String, // 目标节点 TCP 地址。
+    pub target_node_id: Option<u64>, // 目标节点标识。
+    pub target_addr: String,         // 目标节点 TCP 地址。
+    pub(crate) event_sender: Option<mpsc::Sender<IronRaftNetworkEvent>>, // 可选的 TCP 连接事件发送器。
 }
 
 impl IronTcpClient {
     // 创建 TCP 客户端。
     pub fn new(target_addr: String) -> Self {
-        Self { target_addr }
+        Self {
+            target_node_id: None,
+            target_addr,
+            event_sender: None,
+        }
+    }
+
+    // 创建 Raft RPC TCP 客户端。
+    pub(crate) fn new_raft_client(
+        target_node_id: u64,
+        target_addr: String,
+        event_sender: Option<mpsc::Sender<IronRaftNetworkEvent>>,
+    ) -> Self {
+        Self {
+            target_node_id: Some(target_node_id),
+            target_addr,
+            event_sender,
+        }
     }
 
     // 发送一个 TCP 请求。
@@ -59,31 +80,40 @@ impl IronTcpClient {
         &self,
         rpc: AppendEntriesRequest<IronTypeConfig>,
     ) -> Result<AppendEntriesResponse<u64>, io::Error> {
-        match self
+        let result = self
             .send_request(IronTcpRequest::AppendEntries(rpc))
-            .await?
-        {
-            IronTcpResponse::AppendEntries(result) => {
-                result.map_err(|error| io::Error::new(io::ErrorKind::Other, error))
-            }
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "unexpected append entries response",
-            )),
-        }
+            .await
+            .and_then(|response| match response {
+                IronTcpResponse::AppendEntries(result) => {
+                    result.map_err(|error| io::Error::new(io::ErrorKind::Other, error))
+                }
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unexpected append entries response",
+                )),
+            });
+
+        self.report_raft_rpc_failure(&result).await;
+        result
     }
 
     // 发送投票请求。
     async fn send_vote(&self, rpc: VoteRequest<u64>) -> Result<VoteResponse<u64>, io::Error> {
-        match self.send_request(IronTcpRequest::Vote(rpc)).await? {
-            IronTcpResponse::Vote(result) => {
-                result.map_err(|error| io::Error::new(io::ErrorKind::Other, error))
-            }
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "unexpected vote response",
-            )),
-        }
+        let result = self
+            .send_request(IronTcpRequest::Vote(rpc))
+            .await
+            .and_then(|response| match response {
+                IronTcpResponse::Vote(result) => {
+                    result.map_err(|error| io::Error::new(io::ErrorKind::Other, error))
+                }
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unexpected vote response",
+                )),
+            });
+
+        self.report_raft_rpc_failure(&result).await;
+        result
     }
 
     // 发送加入集群请求。
@@ -105,6 +135,32 @@ impl IronTcpClient {
         error: &(impl std::error::Error + 'static),
     ) -> RPCError<u64, openraft::BasicNode, RaftError<u64>> {
         RPCError::Network(NetworkError::new(error))
+    }
+
+    // 上报 Raft RPC 连接失败事件。
+    async fn report_raft_rpc_failure<T>(&self, result: &Result<T, io::Error>) {
+        let Err(error) = result else {
+            return;
+        };
+
+        let (Some(target_node_id), Some(event_sender)) = (self.target_node_id, &self.event_sender)
+        else {
+            return;
+        };
+
+        let event = IronRaftNetworkEvent {
+            target_node_id,
+            target_addr: self.target_addr.clone(),
+            error_message: error.to_string(),
+        };
+
+        if event_sender.send(event).await.is_err() {
+            tracing::warn!(
+                target_node_id,
+                target_addr = %self.target_addr,
+                "[Iron] [cluster] Raft TCP 断线事件接收任务已关闭"
+            );
+        }
     }
 }
 

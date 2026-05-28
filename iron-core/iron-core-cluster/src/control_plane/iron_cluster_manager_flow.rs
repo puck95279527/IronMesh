@@ -4,9 +4,12 @@ use std::io;
 use std::time::Duration;
 
 use openraft::BasicNode;
+use openraft::ChangeMembers;
 use openraft::Raft;
+use openraft::ServerState;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio::sync::mpsc;
 
 use crate::control_plane::IronClusterManager;
 use crate::control_plane::IronClusterManagerSupport;
@@ -16,10 +19,13 @@ use crate::raft::IronTypeConfig;
 use crate::raft::network::IronNetworkFactory;
 use crate::raft::network::IronTcpClient;
 use crate::raft::network::IronTcpServer;
+use crate::raft::network::iron_network_factory::IronRaftNetworkEvent;
 use crate::raft::storage::IronLogStore;
 use crate::raft::storage::IronStateMachine;
 
 const CLUSTER_JOIN_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+const LEARNER_REMOVE_RETRY_INTERVAL: Duration = Duration::from_millis(200);
+const LEARNER_REMOVE_RETRY_LIMIT: usize = 3;
 const PEER_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 
 // IronMesh 集群管理启动流程。
@@ -31,8 +37,15 @@ impl IronClusterManagerFlow {
     pub async fn start(manager: &IronClusterManager) -> anyhow::Result<()> {
         let mut manager = manager.clone();
         Self::validate_topology(&manager)?;
-        let (raft, tcp_server, tcp_listener) = Self::build_raft_runtime(&mut manager).await?;
-        Self::spawn_runtime_services(&manager, raft.clone(), tcp_server, tcp_listener);
+        let (raft, tcp_server, tcp_listener, network_event_receiver) =
+            Self::build_raft_runtime(&mut manager).await?;
+        Self::spawn_runtime_services(
+            &manager,
+            raft.clone(),
+            tcp_server,
+            tcp_listener,
+            network_event_receiver,
+        );
         Self::bootstrap_or_join_cluster(&manager, &raft).await?;
         Ok(())
     }
@@ -76,19 +89,25 @@ impl IronClusterManagerFlow {
     }
 
     // 阶段 2：构建 Raft 运行时。
-    pub async fn build_raft_runtime(
+    pub(crate) async fn build_raft_runtime(
         manager: &mut IronClusterManager,
-    ) -> anyhow::Result<(Raft<IronTypeConfig>, IronTcpServer, TcpListener)> {
+    ) -> anyhow::Result<(
+        Raft<IronTypeConfig>,
+        IronTcpServer,
+        TcpListener,
+        mpsc::Receiver<IronRaftNetworkEvent>,
+    )> {
         let config = IronClusterManagerSupport::build_raft_config()?;
         let tcp_listener = TcpListener::bind(manager.current_node.bind_addr()).await?;
         let tcp_addr = tcp_listener.local_addr()?;
         manager.current_node.set_resolved_node_port(tcp_addr.port());
         let boot_node_ids = manager.boot_nodes.keys().copied().collect::<BTreeSet<_>>();
+        let (network_event_sender, network_event_receiver) = mpsc::channel(1024);
 
         let raft = Raft::<IronTypeConfig>::new(
             manager.current_node.node_id,
             config,
-            IronNetworkFactory::default(),
+            IronNetworkFactory::new(network_event_sender),
             IronLogStore::default(),
             IronStateMachine::default(),
         )
@@ -101,16 +120,19 @@ impl IronClusterManagerFlow {
         );
 
         let tcp_server = IronTcpServer::new(raft.clone(), boot_node_ids);
-        Ok((raft, tcp_server, tcp_listener))
+        Ok((raft, tcp_server, tcp_listener, network_event_receiver))
     }
 
     // 阶段 3：启动后台运行服务。
-    pub fn spawn_runtime_services(
+    pub(crate) fn spawn_runtime_services(
         manager: &IronClusterManager,
         raft: Raft<IronTypeConfig>,
         tcp_server: IronTcpServer,
         tcp_listener: TcpListener,
+        network_event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
     ) {
+        Self::spawn_learner_disconnect_remover(raft.clone(), network_event_receiver);
+
         tokio::spawn(async move {
             if let Err(error) = tcp_server.serve(tcp_listener).await {
                 tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
@@ -132,6 +154,92 @@ impl IronClusterManagerFlow {
                     tracing::warn!(%error, "[Iron] [cluster] Raft 查询 HTTP 服务退出");
                 }
             });
+        }
+    }
+
+    // 启动 learner TCP 断线自动移除任务。
+    fn spawn_learner_disconnect_remover(
+        raft: Raft<IronTypeConfig>,
+        mut event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
+    ) {
+        tokio::spawn(async move {
+            while let Some(event) = event_receiver.recv().await {
+                Self::handle_raft_network_event(raft.clone(), event).await;
+            }
+        });
+    }
+
+    // 处理 Raft TCP 连接事件。
+    async fn handle_raft_network_event(raft: Raft<IronTypeConfig>, event: IronRaftNetworkEvent) {
+        tracing::warn!(
+            target_node_id = event.target_node_id,
+            target_addr = %event.target_addr,
+            error = %event.error_message,
+            "[Iron] [cluster] learner TCP 复制连接断开，准备移出集群"
+        );
+
+        for attempt in 1..=LEARNER_REMOVE_RETRY_LIMIT {
+            let (is_leader, is_member, is_voter) = {
+                let metrics = raft.metrics().borrow().clone();
+                let membership = metrics.membership_config.membership();
+                (
+                    metrics.state == ServerState::Leader,
+                    membership.get_node(&event.target_node_id).is_some(),
+                    membership
+                        .voter_ids()
+                        .any(|node_id| node_id == event.target_node_id),
+                )
+            };
+
+            if !is_leader {
+                return;
+            }
+
+            if !is_member {
+                return;
+            }
+
+            if is_voter {
+                return;
+            }
+
+            match raft
+                .change_membership(
+                    ChangeMembers::RemoveNodes(BTreeSet::from([event.target_node_id])),
+                    false,
+                )
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(
+                        target_node_id = event.target_node_id,
+                        target_addr = %event.target_addr,
+                        attempt,
+                        "[Iron] [cluster] learner 已从集群 membership 移除"
+                    );
+                    return;
+                }
+                Err(error) if attempt < LEARNER_REMOVE_RETRY_LIMIT => {
+                    tracing::warn!(
+                        target_node_id = event.target_node_id,
+                        target_addr = %event.target_addr,
+                        attempt,
+                        %error,
+                        "[Iron] [cluster] learner 移出集群失败，准备短暂重试"
+                    );
+                    tokio::time::sleep(LEARNER_REMOVE_RETRY_INTERVAL).await;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target_node_id = event.target_node_id,
+                        target_addr = %event.target_addr,
+                        attempt,
+                        %error,
+                        "[Iron] [cluster] learner 移出集群最终失败"
+                    );
+                    return;
+                }
+            }
         }
     }
 
