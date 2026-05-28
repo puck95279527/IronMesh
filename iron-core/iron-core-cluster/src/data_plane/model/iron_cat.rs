@@ -16,6 +16,14 @@ impl IronClusterEntityModel for IronCat {
     fn entity_key(&self) -> Self::Key {
         self.id
     }
+
+    // 根据猫数据键构造猫数据。
+    fn from_entity_key(key: Self::Key) -> Self {
+        Self {
+            id: key,
+            ..Self::default()
+        }
+    }
 }
 
 impl From<IronCat> for IronClusterEntity {

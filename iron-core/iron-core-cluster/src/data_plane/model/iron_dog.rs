@@ -16,6 +16,15 @@ impl IronClusterEntityModel for IronDog {
     fn entity_key(&self) -> Self::Key {
         self.id
     }
+
+    // 根据狗数据键构造狗数据。
+    fn from_entity_key(key: Self::Key) -> Self {
+        Self {
+            id: key,
+            name: String::new(),
+            color: String::new(),
+        }
+    }
 }
 
 impl From<IronDog> for IronClusterEntity {

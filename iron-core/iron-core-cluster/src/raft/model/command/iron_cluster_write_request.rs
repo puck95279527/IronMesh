@@ -33,4 +33,12 @@ impl IronClusterWriteRequest<IronClusterEntity> {
     {
         Self::Delete(value.into())
     }
+
+    // 根据默认集群实体键创建删除请求。
+    pub fn delete_key<T>(key: T::Key) -> Self
+    where
+        T: IronClusterEntityModel + Into<IronClusterEntity>,
+    {
+        Self::Delete(T::from_entity_key(key).into())
+    }
 }

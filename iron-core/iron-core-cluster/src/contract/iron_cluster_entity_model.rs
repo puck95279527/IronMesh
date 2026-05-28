@@ -5,4 +5,7 @@ pub trait IronClusterEntityModel {
 
     // 读取实体键。
     fn entity_key(&self) -> Self::Key;
+
+    // 根据实体键构造实体。
+    fn from_entity_key(key: Self::Key) -> Self;
 }

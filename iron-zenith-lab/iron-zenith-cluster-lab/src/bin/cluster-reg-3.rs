@@ -18,11 +18,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }))
         .await?;
     cluster_handler
-        .write_cluster_data(IronClusterWriteRequest::delete(IronCat {
-            id: cluster_handler.current_node_id() as u32,
-            name: cluster_handler.current_node_addr(),
-            age: "delete".to_string(),
-        }))
+        .write_cluster_data(IronClusterWriteRequest::delete_key::<IronCat>(
+            cluster_handler.current_node_id() as u32,
+        ))
         .await?;
     cluster_handler.wait_shutdown().await
 }
