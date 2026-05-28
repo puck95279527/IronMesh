@@ -79,6 +79,7 @@ impl IronClusterManagerCore {
             raft.clone(),
             tcp_server,
             tcp_listener,
+            state_machine_store.clone(),
             network_event_receiver,
         );
 

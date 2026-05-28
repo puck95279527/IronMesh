@@ -148,6 +148,7 @@ impl IronClusterManagerFlow {
         raft: Raft<IronRaftTypeConfig<S>>,
         tcp_server: IronRaftTcpServer<S>,
         tcp_listener: TcpListener,
+        state_machine_store: IronRaftStateMachineStore<S>,
         network_event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
     ) -> JoinSet<()>
     where
@@ -157,7 +158,12 @@ impl IronClusterManagerFlow {
         // Raft TCP 服务必须最先进入后台任务，后续 join 成功后 leader 会立刻尝试复制日志到本节点。
         IronClusterManagerSupport::spawn_raft_tcp_server::<S>(&mut tasks, tcp_server, tcp_listener);
         // 调试 HTTP 只用于人工查询，不参与集群控制面决策。
-        IronClusterManagerSupport::spawn_debug_http::<S>(&mut tasks, manager, raft.clone());
+        IronClusterManagerSupport::spawn_debug_http::<S>(
+            &mut tasks,
+            manager,
+            raft.clone(),
+            state_machine_store,
+        );
         // 断线移除任务只在当前节点成为 leader 时生效，用来清理不可达 learner。
         IronClusterManagerSupport::spawn_learner_disconnect_remover::<S>(
             &mut tasks,

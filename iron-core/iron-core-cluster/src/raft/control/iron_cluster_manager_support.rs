@@ -36,6 +36,7 @@ use crate::raft::network::tcp::iron_raft_tcp_client::IronRaftTcpClient;
 use crate::raft::network::tcp::iron_raft_tcp_server::IronRaftTcpServer;
 use crate::raft::query::iron_raft_query::start_query_http_with_addr;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
+use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineStore;
 
 // IronMesh 集群管理辅助动作。
 pub struct IronClusterManagerSupport;
@@ -186,6 +187,7 @@ impl IronClusterManagerSupport {
         tasks: &mut JoinSet<()>,
         manager: &IronClusterManagerCore,
         raft: Raft<IronRaftTypeConfig<S>>,
+        state_machine_store: IronRaftStateMachineStore<S>,
     ) where
         S: IronRaftStateMachineData,
     {
@@ -194,7 +196,9 @@ impl IronClusterManagerSupport {
 
         if let Some(http_debug_addr) = debug_http_addr {
             tasks.spawn(async move {
-                if let Err(error) = start_query_http_with_addr(node_id, http_debug_addr, raft).await
+                if let Err(error) =
+                    start_query_http_with_addr(node_id, http_debug_addr, raft, state_machine_store)
+                        .await
                 {
                     tracing::warn!(%error, "[Iron] [cluster] Raft 调试 HTTP 服务退出");
                 }
