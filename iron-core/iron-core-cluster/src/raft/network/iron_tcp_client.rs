@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::io;
+use std::sync::Arc;
 
 use futures_util::SinkExt;
 use futures_util::StreamExt;
@@ -19,6 +20,7 @@ use openraft::raft::SnapshotResponse;
 use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio_util::codec::Framed;
 
@@ -31,8 +33,9 @@ use crate::raft::network::protocol::IronTcpResponse;
 // IronMesh Raft TCP 客户端。
 #[derive(Clone, Debug, Default)]
 pub struct IronTcpClient {
-    pub target_node_id: Option<u64>, // 目标节点标识。
-    pub target_addr: String,         // 目标节点 TCP 地址。
+    pub target_node_id: Option<u64>,                  // 目标节点标识。
+    pub target_addr: String,                          // 目标节点 TCP 地址。
+    pub cached_stream: Arc<Mutex<Option<TcpStream>>>, // Raft RPC 目标节点长连接缓存。
     pub(crate) event_sender: Option<mpsc::Sender<IronRaftNetworkEvent>>, // 可选的 TCP 连接事件发送器。
 }
 
@@ -42,6 +45,7 @@ impl IronTcpClient {
         Self {
             target_node_id: None,
             target_addr,
+            cached_stream: Arc::new(Mutex::new(None)),
             event_sender: None,
         }
     }
@@ -55,6 +59,7 @@ impl IronTcpClient {
         Self {
             target_node_id: Some(target_node_id),
             target_addr,
+            cached_stream: Arc::new(Mutex::new(None)),
             event_sender,
         }
     }
@@ -75,13 +80,102 @@ impl IronTcpClient {
         IronTcpFrameCodec::decode_response(response)
     }
 
+    // 建立一个新的 TCP 连接。
+    async fn connect_new_stream(&self) -> Result<TcpStream, io::Error> {
+        TcpStream::connect(&self.target_addr).await
+    }
+
+    // 清空缓存连接。
+    async fn clear_cached_stream(&self) {
+        let mut guard = self.cached_stream.lock().await;
+        *guard = None;
+    }
+
+    // 通过缓存连接发送一个 Raft RPC 请求。
+    async fn send_raft_request_once(
+        &self,
+        request: &IronTcpRequest,
+    ) -> Result<IronTcpResponse, io::Error> {
+        let mut guard = self.cached_stream.lock().await;
+        if guard.is_none() {
+            *guard = Some(self.connect_new_stream().await?);
+        }
+
+        let stream = guard.as_mut().expect("cached stream must exist");
+        let mut framed = Framed::new(stream, IronTcpFrameCodec::default());
+        let request = IronTcpFrameCodec::encode_request(request)?;
+
+        if let Err(error) = framed.send(request).await {
+            *guard = None;
+            return Err(error);
+        }
+
+        let response = match framed.next().await {
+            Some(Ok(response)) => response,
+            Some(Err(error)) => {
+                *guard = None;
+                return Err(error);
+            }
+            None => {
+                *guard = None;
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "tcp response closed",
+                ));
+            }
+        };
+
+        IronTcpFrameCodec::decode_response(response)
+    }
+
+    // 发送 Raft RPC 请求，失败后重试一次。
+    async fn send_raft_request_with_retry(
+        &self,
+        request: IronTcpRequest,
+    ) -> Result<IronTcpResponse, io::Error> {
+        match self.send_raft_request_once(&request).await {
+            Ok(response) => Ok(response),
+            Err(_) => match self.send_raft_request_once(&request).await {
+                Ok(response) => Ok(response),
+                Err(error) => {
+                    self.report_raft_rpc_failure(&error).await;
+                    Err(error)
+                }
+            },
+        }
+    }
+
+    // 按 OpenRaft soft ttl 发送 Raft RPC 请求。
+    async fn send_raft_request_with_option(
+        &self,
+        request: IronTcpRequest,
+        option: &RPCOption,
+    ) -> Result<IronTcpResponse, io::Error> {
+        match tokio::time::timeout(
+            option.soft_ttl(),
+            self.send_raft_request_with_retry(request),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                self.clear_cached_stream().await;
+                let error =
+                    io::Error::new(io::ErrorKind::TimedOut, "raft tcp rpc soft ttl timeout");
+                self.report_raft_rpc_failure(&error).await;
+                Err(error)
+            }
+        }
+    }
+
     // 发送追加日志请求。
     async fn send_append_entries(
         &self,
         rpc: AppendEntriesRequest<IronTypeConfig>,
+        option: &RPCOption,
     ) -> Result<AppendEntriesResponse<u64>, io::Error> {
         let result = self
-            .send_request(IronTcpRequest::AppendEntries(rpc))
+            .send_raft_request_with_option(IronTcpRequest::AppendEntries(rpc), option)
             .await
             .and_then(|response| match response {
                 IronTcpResponse::AppendEntries(result) => {
@@ -93,14 +187,17 @@ impl IronTcpClient {
                 )),
             });
 
-        self.report_raft_rpc_failure(&result).await;
         result
     }
 
     // 发送投票请求。
-    async fn send_vote(&self, rpc: VoteRequest<u64>) -> Result<VoteResponse<u64>, io::Error> {
+    async fn send_vote(
+        &self,
+        rpc: VoteRequest<u64>,
+        option: &RPCOption,
+    ) -> Result<VoteResponse<u64>, io::Error> {
         let result = self
-            .send_request(IronTcpRequest::Vote(rpc))
+            .send_raft_request_with_option(IronTcpRequest::Vote(rpc), option)
             .await
             .and_then(|response| match response {
                 IronTcpResponse::Vote(result) => {
@@ -112,7 +209,6 @@ impl IronTcpClient {
                 )),
             });
 
-        self.report_raft_rpc_failure(&result).await;
         result
     }
 
@@ -138,11 +234,7 @@ impl IronTcpClient {
     }
 
     // 上报 Raft RPC 连接失败事件。
-    async fn report_raft_rpc_failure<T>(&self, result: &Result<T, io::Error>) {
-        let Err(error) = result else {
-            return;
-        };
-
+    async fn report_raft_rpc_failure(&self, error: &io::Error) {
         let (Some(target_node_id), Some(event_sender)) = (self.target_node_id, &self.event_sender)
         else {
             return;
@@ -169,10 +261,10 @@ impl RaftNetwork<IronTypeConfig> for IronTcpClient {
     async fn append_entries(
         &mut self,
         rpc: AppendEntriesRequest<IronTypeConfig>,
-        _option: RPCOption,
+        option: RPCOption,
     ) -> Result<AppendEntriesResponse<u64>, RPCError<u64, openraft::BasicNode, RaftError<u64>>>
     {
-        self.send_append_entries(rpc)
+        self.send_append_entries(rpc, &option)
             .await
             .map_err(|error| Self::network_error(&error))
     }
@@ -181,9 +273,9 @@ impl RaftNetwork<IronTypeConfig> for IronTcpClient {
     async fn vote(
         &mut self,
         rpc: VoteRequest<u64>,
-        _option: RPCOption,
+        option: RPCOption,
     ) -> Result<VoteResponse<u64>, RPCError<u64, openraft::BasicNode, RaftError<u64>>> {
-        self.send_vote(rpc)
+        self.send_vote(rpc, &option)
             .await
             .map_err(|error| Self::network_error(&error))
     }
