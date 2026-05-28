@@ -6,6 +6,7 @@ pub(crate) mod raft;
 pub(crate) mod utils;
 
 pub use api::IronCat;
+pub use api::IronClusterEntity;
 pub use api::IronClusterHandler;
 pub use api::IronClusterManager;
 pub use api::IronClusterNode;
@@ -14,4 +15,5 @@ pub use api::IronClusterState;
 pub use api::IronClusterWriteError;
 pub use api::IronClusterWriteRequest;
 pub use api::IronClusterWriteResponse;
+pub use api::IronDog;
 pub use api::IronRaftStateMachineData;

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::data_plane::iron_cat::IronCat;
+use crate::data_plane::iron_cluster_entity::IronClusterEntity;
+use crate::data_plane::model::iron_cat::IronCat;
+use crate::data_plane::model::iron_dog::IronDog;
 use crate::raft::model::command::iron_cluster_write_request::IronClusterWriteRequest;
 use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
@@ -8,43 +10,44 @@ use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData
 // IronMesh 集群状态数据模型。
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct IronClusterState {
-    pub values: BTreeMap<u64, IronCat>, // 集群业务数据的最小键值存储。
+    pub cats: BTreeMap<u64, IronCat>, // 集群猫数据的最小键值存储。
+    pub dogs: BTreeMap<u64, IronDog>, // 集群狗数据的最小键值存储。
 }
 
 impl IronRaftStateMachineData for IronClusterState {
-    type WriteRequest = IronClusterWriteRequest<u64, IronCat>;
-    type WriteResponse = IronClusterWriteResponse<IronCat>;
+    type WriteRequest = IronClusterWriteRequest;
+    type WriteResponse = IronClusterWriteResponse<IronClusterEntity>;
 
     // 应用 Raft 写入请求到默认集群状态机。
     fn apply_raft_request(&mut self, request: Self::WriteRequest) -> Self::WriteResponse {
         match request {
-            IronClusterWriteRequest::Insert(value) => {
+            IronClusterWriteRequest::InsertCat(value) => {
                 let key = value.id;
-                if let Some(existing_value) = self.values.get(&key).cloned() {
+                if let Some(existing_value) = self.cats.get(&key).cloned() {
                     IronClusterWriteResponse {
                         applied: false,
-                        value: Some(existing_value.clone()),
-                        previous_value: Some(existing_value),
-                        message: Some(format!("键已存在，新增失败: {key}")),
+                        value: Some(IronClusterEntity::Cat(existing_value.clone())),
+                        previous_value: Some(IronClusterEntity::Cat(existing_value)),
+                        message: Some(format!("猫数据键已存在，新增失败: {key}")),
                     }
                 } else {
-                    self.values.insert(key, value.clone());
+                    self.cats.insert(key, value.clone());
                     IronClusterWriteResponse {
                         applied: true,
-                        value: Some(value),
+                        value: Some(IronClusterEntity::Cat(value)),
                         previous_value: None,
                         message: None,
                     }
                 }
             }
-            IronClusterWriteRequest::Update(value) => {
+            IronClusterWriteRequest::UpdateCat(value) => {
                 let key = value.id;
-                if let Some(previous_value) = self.values.get(&key).cloned() {
-                    self.values.insert(key, value.clone());
+                if let Some(previous_value) = self.cats.get(&key).cloned() {
+                    self.cats.insert(key, value.clone());
                     IronClusterWriteResponse {
                         applied: true,
-                        value: Some(value),
-                        previous_value: Some(previous_value),
+                        value: Some(IronClusterEntity::Cat(value)),
+                        previous_value: Some(IronClusterEntity::Cat(previous_value)),
                         message: None,
                     }
                 } else {
@@ -52,16 +55,16 @@ impl IronRaftStateMachineData for IronClusterState {
                         applied: false,
                         value: None,
                         previous_value: None,
-                        message: Some(format!("键不存在，修改失败: {key}")),
+                        message: Some(format!("猫数据键不存在，修改失败: {key}")),
                     }
                 }
             }
-            IronClusterWriteRequest::Delete(key) => {
-                if let Some(previous_value) = self.values.remove(&key) {
+            IronClusterWriteRequest::DeleteCat(key) => {
+                if let Some(previous_value) = self.cats.remove(&key) {
                     IronClusterWriteResponse {
                         applied: true,
                         value: None,
-                        previous_value: Some(previous_value),
+                        previous_value: Some(IronClusterEntity::Cat(previous_value)),
                         message: None,
                     }
                 } else {
@@ -69,7 +72,62 @@ impl IronRaftStateMachineData for IronClusterState {
                         applied: false,
                         value: None,
                         previous_value: None,
-                        message: Some(format!("键不存在，删除失败: {key}")),
+                        message: Some(format!("猫数据键不存在，删除失败: {key}")),
+                    }
+                }
+            }
+            IronClusterWriteRequest::InsertDog(value) => {
+                let key = value.id;
+                if let Some(existing_value) = self.dogs.get(&key).cloned() {
+                    IronClusterWriteResponse {
+                        applied: false,
+                        value: Some(IronClusterEntity::Dog(existing_value.clone())),
+                        previous_value: Some(IronClusterEntity::Dog(existing_value)),
+                        message: Some(format!("狗数据键已存在，新增失败: {key}")),
+                    }
+                } else {
+                    self.dogs.insert(key, value.clone());
+                    IronClusterWriteResponse {
+                        applied: true,
+                        value: Some(IronClusterEntity::Dog(value)),
+                        previous_value: None,
+                        message: None,
+                    }
+                }
+            }
+            IronClusterWriteRequest::UpdateDog(value) => {
+                let key = value.id;
+                if let Some(previous_value) = self.dogs.get(&key).cloned() {
+                    self.dogs.insert(key, value.clone());
+                    IronClusterWriteResponse {
+                        applied: true,
+                        value: Some(IronClusterEntity::Dog(value)),
+                        previous_value: Some(IronClusterEntity::Dog(previous_value)),
+                        message: None,
+                    }
+                } else {
+                    IronClusterWriteResponse {
+                        applied: false,
+                        value: None,
+                        previous_value: None,
+                        message: Some(format!("狗数据键不存在，修改失败: {key}")),
+                    }
+                }
+            }
+            IronClusterWriteRequest::DeleteDog(key) => {
+                if let Some(previous_value) = self.dogs.remove(&key) {
+                    IronClusterWriteResponse {
+                        applied: true,
+                        value: None,
+                        previous_value: Some(IronClusterEntity::Dog(previous_value)),
+                        message: None,
+                    }
+                } else {
+                    IronClusterWriteResponse {
+                        applied: false,
+                        value: None,
+                        previous_value: None,
+                        message: Some(format!("狗数据键不存在，删除失败: {key}")),
                     }
                 }
             }

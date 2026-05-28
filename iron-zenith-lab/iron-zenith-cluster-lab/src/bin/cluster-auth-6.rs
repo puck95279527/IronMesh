@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cluster_handler = cluster_manager.start().await?;
     cluster_handler
-        .write_cluster_data(IronClusterWriteRequest::<u64, IronCat>::Insert(IronCat {
+        .write_cluster_data(IronClusterWriteRequest::InsertCat(IronCat {
             id: cluster_handler.current_node_id(),
             name: cluster_handler.current_node_addr(),
             age: "normal".to_string(),
