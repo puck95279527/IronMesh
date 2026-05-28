@@ -8,3 +8,6 @@ name = "iron_core_cluster"
 path = "src/lib.rs"
 
 [dependencies]
+bytes.workspace = true
+openraft.workspace = true
+tokio-util.workspace = true
