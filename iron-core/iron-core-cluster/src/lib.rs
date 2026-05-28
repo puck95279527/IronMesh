@@ -18,4 +18,5 @@ pub use api::IronClusterWriteError;
 pub use api::IronClusterWriteRequest;
 pub use api::IronClusterWriteResponse;
 pub use api::IronDog;
+pub use api::IronRaftStateMachineContainer;
 pub use api::IronRaftStateMachineData;

@@ -3,10 +3,11 @@ use std::error::Error;
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
 use crate::control_plane::iron_cluster_runtime::IronClusterRuntime;
 use crate::data_plane::iron_cluster_state::IronClusterState;
+use crate::raft::storage::iron_raft_state_machine_container::IronRaftStateMachineContainer;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh 集群运行处理器，是外部调用者操作已启动节点的公开入口。
-pub struct IronClusterHandler<S = IronClusterState>
+pub struct IronClusterHandler<S = IronRaftStateMachineContainer<IronClusterState>>
 where
     S: IronRaftStateMachineData,
 {

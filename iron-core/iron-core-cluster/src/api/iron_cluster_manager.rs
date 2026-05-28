@@ -4,11 +4,12 @@ use std::marker::PhantomData;
 use crate::api::iron_cluster_handler::IronClusterHandler;
 use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::control::iron_cluster_manager_core::IronClusterManagerCore;
+use crate::raft::storage::iron_raft_state_machine_container::IronRaftStateMachineContainer;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 
 // IronMesh 集群管理器，是外部调用者启动集群节点的公开入口。
 #[derive(Debug, Clone)]
-pub struct IronClusterManager<S = IronClusterState>
+pub struct IronClusterManager<S = IronRaftStateMachineContainer<IronClusterState>>
 where
     S: IronRaftStateMachineData,
 {
@@ -18,7 +19,7 @@ where
     marker: PhantomData<fn() -> S>,
 }
 
-impl IronClusterManager<IronClusterState> {
+impl IronClusterManager<IronRaftStateMachineContainer<IronClusterState>> {
     // 创建默认状态机的投票节点集群管理器。
     pub fn add_voter(node_id: u64) -> Result<Self, Box<dyn Error>> {
         Self::add_voter_with_state(node_id)
