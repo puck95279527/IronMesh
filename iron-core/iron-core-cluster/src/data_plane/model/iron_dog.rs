@@ -1,3 +1,4 @@
+use crate::data_plane::iron_cluster_entity::IronClusterEntity;
 use crate::data_plane::iron_cluster_entity::IronClusterEntityModel;
 
 // IronMesh 集群验证用狗数据模型。
@@ -14,5 +15,12 @@ impl IronClusterEntityModel for IronDog {
     // 读取狗数据键。
     fn entity_key(&self) -> Self::Key {
         self.id
+    }
+}
+
+impl From<IronDog> for IronClusterEntity {
+    // 将狗数据转换为集群实体。
+    fn from(value: IronDog) -> Self {
+        Self::Dog(value)
     }
 }
