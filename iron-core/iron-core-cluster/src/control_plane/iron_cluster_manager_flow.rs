@@ -10,10 +10,12 @@ use openraft::ServerState;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 use crate::control_plane::IronClusterManager;
 use crate::control_plane::IronClusterManagerSupport;
 use crate::control_plane::IronClusterNodeRole;
+use crate::control_plane::IronClusterRuntime;
 use crate::query::iron_raft_query::start_query_http_with_addr;
 use crate::raft::IronTypeConfig;
 use crate::raft::network::IronNetworkFactory;
@@ -24,6 +26,7 @@ use crate::raft::storage::IronLogStore;
 use crate::raft::storage::IronStateMachine;
 
 const CLUSTER_JOIN_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+const JOIN_LOCAL_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const LEARNER_REMOVE_RETRY_INTERVAL: Duration = Duration::from_millis(200);
 const LEARNER_REMOVE_RETRY_LIMIT: usize = 3;
 const PEER_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
@@ -34,12 +37,12 @@ pub struct IronClusterManagerFlow;
 
 impl IronClusterManagerFlow {
     // 启动当前集群节点。
-    pub async fn start(manager: &IronClusterManager) -> anyhow::Result<()> {
+    pub async fn start(manager: &IronClusterManager) -> anyhow::Result<IronClusterRuntime> {
         let mut manager = manager.clone();
         Self::validate_topology(&manager)?;
         let (raft, tcp_server, tcp_listener, network_event_receiver) =
             Self::build_raft_runtime(&mut manager).await?;
-        Self::spawn_runtime_services(
+        let tasks = Self::spawn_runtime_services(
             &manager,
             raft.clone(),
             tcp_server,
@@ -47,7 +50,7 @@ impl IronClusterManagerFlow {
             network_event_receiver,
         );
         Self::bootstrap_or_join_cluster(&manager, &raft).await?;
-        Ok(())
+        Ok(IronClusterRuntime::new(manager.current_node, raft, tasks))
     }
 
     // 阶段 1：校验当前节点和注册节点表。
@@ -130,10 +133,11 @@ impl IronClusterManagerFlow {
         tcp_server: IronTcpServer,
         tcp_listener: TcpListener,
         network_event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
-    ) {
-        Self::spawn_learner_disconnect_remover(raft.clone(), network_event_receiver);
+    ) -> JoinSet<()> {
+        let mut tasks = JoinSet::new();
+        Self::spawn_learner_disconnect_remover(&mut tasks, raft.clone(), network_event_receiver);
 
-        tokio::spawn(async move {
+        tasks.spawn(async move {
             if let Err(error) = tcp_server.serve(tcp_listener).await {
                 tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
             }
@@ -147,7 +151,7 @@ impl IronClusterManagerFlow {
         if let Some(http_debug_addr) = manager.current_node.http_debug_addr.clone() {
             let node_id = manager.current_node.node_id;
             let query_raft = raft.clone();
-            tokio::spawn(async move {
+            tasks.spawn(async move {
                 if let Err(error) =
                     start_query_http_with_addr(node_id, http_debug_addr, query_raft).await
                 {
@@ -155,14 +159,17 @@ impl IronClusterManagerFlow {
                 }
             });
         }
+
+        tasks
     }
 
     // 启动 learner TCP 断线自动移除任务。
     fn spawn_learner_disconnect_remover(
+        tasks: &mut JoinSet<()>,
         raft: Raft<IronTypeConfig>,
         mut event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
     ) {
-        tokio::spawn(async move {
+        tasks.spawn(async move {
             while let Some(event) = event_receiver.recv().await {
                 Self::handle_raft_network_event(raft.clone(), event).await;
             }
@@ -249,7 +256,7 @@ impl IronClusterManagerFlow {
         raft: &Raft<IronTypeConfig>,
     ) -> anyhow::Result<()> {
         loop {
-            if Self::try_join_existing_cluster(manager).await? {
+            if Self::try_join_existing_cluster(manager, raft).await? {
                 tracing::info!(
                     node_id = manager.current_node.node_id,
                     "[Iron] [cluster] 当前节点已加入已有集群"
@@ -271,7 +278,10 @@ impl IronClusterManagerFlow {
     }
 
     // 阶段 4.1：尝试加入已有集群。
-    pub async fn try_join_existing_cluster(manager: &IronClusterManager) -> anyhow::Result<bool> {
+    pub async fn try_join_existing_cluster(
+        manager: &IronClusterManager,
+        raft: &Raft<IronTypeConfig>,
+    ) -> anyhow::Result<bool> {
         for (peer_id, peer) in &manager.boot_nodes {
             if *peer_id == manager.current_node.node_id {
                 continue;
@@ -290,7 +300,26 @@ impl IronClusterManagerFlow {
                 )
                 .await
             {
-                Ok(()) => return Ok(true),
+                Ok(()) => {
+                    tracing::info!(
+                        node_id = manager.current_node.node_id,
+                        peer_id,
+                        "[Iron] [cluster] leader 已接受当前节点加入请求，等待本地 Raft 状态就绪"
+                    );
+                    if let Err(error) =
+                        Self::wait_until_local_joined_cluster(manager, raft, *peer_id).await
+                    {
+                        tracing::warn!(
+                            node_id = manager.current_node.node_id,
+                            peer_id,
+                            %error,
+                            "[Iron] [cluster] 本地 Raft 状态尚未就绪，稍后重试加入流程"
+                        );
+                        continue;
+                    }
+
+                    return Ok(true);
+                }
                 Err(error) => {
                     tracing::debug!(
                         node_id = manager.current_node.node_id,
@@ -304,6 +333,38 @@ impl IronClusterManagerFlow {
         }
 
         Ok(false)
+    }
+
+    // 等待当前节点本地 Raft 状态确认已经完成集群加入。
+    pub async fn wait_until_local_joined_cluster(
+        manager: &IronClusterManager,
+        raft: &Raft<IronTypeConfig>,
+        leader_id: u64,
+    ) -> anyhow::Result<()> {
+        let current_node_id = manager.current_node.node_id;
+        let metrics = raft
+            .wait(Some(JOIN_LOCAL_READY_TIMEOUT))
+            .metrics(
+                move |metrics| {
+                    metrics.current_leader == Some(leader_id)
+                        && metrics
+                            .membership_config
+                            .membership()
+                            .get_node(&current_node_id)
+                            .is_some()
+                },
+                "等待本地节点感知 leader 并确认 membership",
+            )
+            .await
+            .map_err(|error| io::Error::new(io::ErrorKind::TimedOut, error.to_string()))?;
+
+        tracing::info!(
+            node_id = current_node_id,
+            leader_id,
+            membership_log_id = ?metrics.membership_config.log_id(),
+            "[Iron] [cluster] 本地 Raft 状态已确认集群加入"
+        );
+        Ok(())
     }
 
     // 阶段 4.2：初始化只包含当前节点的最小集群。

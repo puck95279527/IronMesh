@@ -111,12 +111,6 @@ impl IronTcpClient {
                 "[Iron] [cluster] Raft TCP 缓存连接不存在，创建新连接"
             );
             *guard = Some(self.connect_new_stream().await?);
-        } else {
-            tracing::debug!(
-                target_node_id = ?self.target_node_id,
-                target_addr = %self.target_addr,
-                "[Iron] [cluster] Raft TCP 复用缓存连接"
-            );
         }
 
         let stream = guard.as_mut().expect("cached stream must exist");

@@ -5,6 +5,7 @@ use crate::control_plane::IronClusterManagerFlow;
 use crate::control_plane::IronClusterManagerSupport;
 use crate::control_plane::IronClusterNode;
 use crate::control_plane::IronClusterNodeRole;
+use crate::control_plane::IronClusterRuntime;
 use crate::utils::IronSnowflakeIdGenerator;
 
 // IronMesh 集群管理器。
@@ -55,7 +56,7 @@ impl IronClusterManager {
     }
 
     // 启动当前集群节点。
-    pub async fn start(&self) -> anyhow::Result<()> {
+    pub async fn start(&self) -> anyhow::Result<IronClusterRuntime> {
         IronClusterManagerFlow::start(self).await
     }
 }

@@ -13,6 +13,7 @@ impl IronController {
         let cluster_manager = IronClusterManager::add_voter(node_id)?;
         Ok(IronHandler {
             controller: Self { cluster_manager },
+            runtime: None,
         })
     }
 
@@ -21,6 +22,7 @@ impl IronController {
         let cluster_manager = IronClusterManager::add_learner(advertise_node_ip)?;
         Ok(IronHandler {
             controller: Self { cluster_manager },
+            runtime: None,
         })
     }
 }

@@ -3,9 +3,11 @@ pub mod iron_cluster_manager;
 pub mod iron_cluster_manager_flow;
 pub mod iron_cluster_manager_support;
 pub mod iron_cluster_node;
+pub mod iron_cluster_runtime;
 
 pub use iron_cluster_manager::IronClusterManager;
 pub use iron_cluster_manager_flow::IronClusterManagerFlow;
 pub use iron_cluster_manager_support::IronClusterManagerSupport;
 pub use iron_cluster_node::IronClusterNode;
 pub use iron_cluster_node::IronClusterNodeRole;
+pub use iron_cluster_runtime::IronClusterRuntime;
