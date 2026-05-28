@@ -25,4 +25,14 @@ pub trait IronRaftStateMachineData:
 
     // 应用一条 Raft 写入请求，并返回写入结果。
     fn apply_raft_request(&mut self, request: Self::WriteRequest) -> Self::WriteResponse;
+
+    // 判断写入响应是否代表状态机实际发生变更。
+    fn write_response_applied(_response: &Self::WriteResponse) -> bool {
+        true
+    }
+
+    // 创建来源节点数据清理请求，不支持来源节点索引的状态机默认不提供。
+    fn clean_source_node_data_request(_source_node_id: u64) -> Option<Self::WriteRequest> {
+        None
+    }
 }

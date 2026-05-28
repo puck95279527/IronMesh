@@ -1,4 +1,6 @@
 use crate::contract::iron_cluster_entity_model::IronClusterEntityModel;
+use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeObjectRef;
+use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeTagged;
 use crate::data_plane::iron_cluster_entity::IronClusterEntity;
 
 // IronMesh 集群验证用狗数据模型。
@@ -24,6 +26,20 @@ impl IronClusterEntityModel for IronDog {
             name: String::new(),
             color: String::new(),
         }
+    }
+}
+
+impl IronClusterEntityModelSourceNodeTagged for IronDog {
+    // 狗数据不进入来源节点索引。
+    fn source_node_object_ref(&self) -> Option<IronClusterEntityModelSourceNodeObjectRef> {
+        None
+    }
+
+    // 狗数据键不进入来源节点索引。
+    fn source_node_object_ref_from_key(
+        _key: &Self::Key,
+    ) -> Option<IronClusterEntityModelSourceNodeObjectRef> {
+        None
     }
 }
 

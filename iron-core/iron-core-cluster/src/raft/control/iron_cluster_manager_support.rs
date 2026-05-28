@@ -235,6 +235,7 @@ impl IronClusterManagerSupport {
             "[Iron] [cluster] learner TCP 复制连接断开，准备移出集群"
         );
 
+        let mut did_try_clean_source_node_data = false;
         for attempt in 1..=LEARNER_REMOVE_RETRY_LIMIT {
             let (is_leader, is_member, is_voter) = {
                 let metrics = raft.metrics().borrow().clone();
@@ -278,6 +279,11 @@ impl IronClusterManagerSupport {
                 return;
             }
 
+            if !did_try_clean_source_node_data {
+                Self::clean_disconnected_learner_source_node_data(raft.clone(), &event).await;
+                did_try_clean_source_node_data = true;
+            }
+
             match raft
                 .change_membership(
                     ChangeMembers::RemoveNodes(BTreeSet::from([event.target_node_id])),
@@ -314,6 +320,41 @@ impl IronClusterManagerSupport {
                     );
                     return;
                 }
+            }
+        }
+    }
+
+    // 清理断线 learner 写入的来源节点数据。
+    async fn clean_disconnected_learner_source_node_data<S>(
+        raft: Raft<IronRaftTypeConfig<S>>,
+        event: &IronRaftNetworkEvent,
+    ) where
+        S: IronRaftStateMachineData,
+    {
+        let Some(request) = S::clean_source_node_data_request(event.target_node_id) else {
+            tracing::debug!(
+                target_node_id = event.target_node_id,
+                target_addr = %event.target_addr,
+                "[Iron] [cluster-data] 当前状态机未提供来源节点数据清理命令"
+            );
+            return;
+        };
+
+        match raft.client_write(request).await {
+            Ok(_) => {
+                tracing::info!(
+                    target_node_id = event.target_node_id,
+                    target_addr = %event.target_addr,
+                    "[Iron] [cluster-data] 已提交断线 learner 来源节点数据清理命令"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target_node_id = event.target_node_id,
+                    target_addr = %event.target_addr,
+                    %error,
+                    "[Iron] [cluster-data] 提交断线 learner 来源节点数据清理命令失败"
+                );
             }
         }
     }

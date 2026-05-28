@@ -6,9 +6,16 @@ use openraft::Raft;
 use tokio::task::JoinSet;
 
 use crate::api::iron_cluster_write_error::IronClusterWriteError;
+use crate::contract::iron_cluster_entity_model::IronClusterEntityModel;
+use crate::contract::iron_cluster_entity_model_source_node_tagged::IronClusterEntityModelSourceNodeTagged;
 use crate::control_plane::iron_cluster_write_router::IronClusterWriteRouter;
+use crate::data_plane::iron_cluster_entity::IronClusterEntity;
+use crate::data_plane::iron_cluster_state::IronClusterState;
 use crate::raft::control::iron_cluster_node::IronClusterNode;
+use crate::raft::model::command::iron_cluster_write_response::IronClusterWriteResponse;
+use crate::raft::model::command::iron_raft_state_machine_write_request::IronRaftStateMachineWriteRequest;
 use crate::raft::model::iron_raft_type_config::IronRaftTypeConfig;
+use crate::raft::storage::iron_raft_state_machine_container::IronRaftStateMachineContainer;
 use crate::raft::storage::iron_raft_state_machine_data::IronRaftStateMachineData;
 use crate::raft::storage::iron_raft_state_machine_store::IronRaftStateMachineStore;
 
@@ -25,6 +32,76 @@ where
     write_router: IronClusterWriteRouter<S>,
     // 当前集群节点托管的后台任务集合。
     tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
+}
+
+impl IronClusterRuntime<IronRaftStateMachineContainer<IronClusterState>> {
+    // 新增默认集群业务实体。
+    pub(crate) async fn insert_cluster_data<T>(
+        &self,
+        value: T,
+    ) -> Result<IronClusterWriteResponse<IronClusterEntity>, IronClusterWriteError>
+    where
+        T: IronClusterEntityModel
+            + IronClusterEntityModelSourceNodeTagged
+            + Into<IronClusterEntity>,
+    {
+        self.write_cluster_data(IronRaftStateMachineWriteRequest::cluster_insert(
+            self.current_node_id(),
+            value,
+        ))
+        .await
+    }
+
+    // 修改默认集群业务实体。
+    pub(crate) async fn update_cluster_data<T>(
+        &self,
+        value: T,
+    ) -> Result<IronClusterWriteResponse<IronClusterEntity>, IronClusterWriteError>
+    where
+        T: IronClusterEntityModel
+            + IronClusterEntityModelSourceNodeTagged
+            + Into<IronClusterEntity>,
+    {
+        self.write_cluster_data(IronRaftStateMachineWriteRequest::cluster_update(
+            self.current_node_id(),
+            value,
+        ))
+        .await
+    }
+
+    // 删除默认集群业务实体。
+    pub(crate) async fn delete_cluster_data<T>(
+        &self,
+        value: T,
+    ) -> Result<IronClusterWriteResponse<IronClusterEntity>, IronClusterWriteError>
+    where
+        T: IronClusterEntityModel
+            + IronClusterEntityModelSourceNodeTagged
+            + Into<IronClusterEntity>,
+    {
+        self.write_cluster_data(IronRaftStateMachineWriteRequest::cluster_delete(
+            self.current_node_id(),
+            value,
+        ))
+        .await
+    }
+
+    // 按实体键删除默认集群业务实体。
+    pub(crate) async fn delete_cluster_data_key<T>(
+        &self,
+        key: T::Key,
+    ) -> Result<IronClusterWriteResponse<IronClusterEntity>, IronClusterWriteError>
+    where
+        T: IronClusterEntityModel
+            + IronClusterEntityModelSourceNodeTagged
+            + Into<IronClusterEntity>,
+    {
+        self.write_cluster_data(IronRaftStateMachineWriteRequest::cluster_delete_key::<T>(
+            self.current_node_id(),
+            key,
+        ))
+        .await
+    }
 }
 
 impl<S> IronClusterRuntime<S>
