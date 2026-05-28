@@ -28,4 +28,9 @@ impl IronClusterNode {
     pub fn node_addr(&self) -> String {
         format!("{}:{}", self.node_ip, self.node_port.unwrap_or(0))
     }
+
+    // 写入 TCP listener 实际绑定成功后的端口。
+    pub fn set_resolved_node_port(&mut self, node_port: u16) {
+        self.node_port = Some(node_port);
+    }
 }

@@ -5,6 +5,7 @@ use crate::control_plane::IronClusterManagerFlow;
 use crate::control_plane::IronClusterManagerSupport;
 use crate::control_plane::IronClusterNode;
 use crate::control_plane::IronClusterNodeRole;
+use crate::utils::IronSnowflakeIdGenerator;
 
 // IronMesh 集群管理器。
 #[derive(Clone, Debug)]
@@ -33,13 +34,12 @@ impl IronClusterManager {
     // 添加学习节点。
     pub fn add_learner(advertise_node_ip: impl Into<String>) -> anyhow::Result<Self> {
         let boot_nodes = IronClusterManagerSupport::load_cluster_boot()?;
-        let node_id = boot_nodes
-            .keys()
-            .next_back()
-            .copied()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "注册节点表不能为空"))?
-            .checked_add(1)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "学习节点 ID 溢出"))?;
+        let node_id = loop {
+            let node_id = IronSnowflakeIdGenerator::next_u64();
+            if !boot_nodes.contains_key(&node_id) {
+                break node_id;
+            }
+        };
 
         Ok(Self {
             current_node: IronClusterNode {

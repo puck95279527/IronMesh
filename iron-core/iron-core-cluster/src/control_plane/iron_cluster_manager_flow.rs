@@ -29,10 +29,11 @@ pub struct IronClusterManagerFlow;
 impl IronClusterManagerFlow {
     // 启动当前集群节点。
     pub async fn start(manager: &IronClusterManager) -> anyhow::Result<()> {
-        Self::validate_topology(manager)?;
-        let (raft, tcp_server, tcp_listener) = Self::build_raft_runtime(manager).await?;
-        Self::spawn_runtime_services(manager, raft.clone(), tcp_server, tcp_listener);
-        Self::bootstrap_or_join_cluster(manager, &raft).await?;
+        let mut manager = manager.clone();
+        Self::validate_topology(&manager)?;
+        let (raft, tcp_server, tcp_listener) = Self::build_raft_runtime(&mut manager).await?;
+        Self::spawn_runtime_services(&manager, raft.clone(), tcp_server, tcp_listener);
+        Self::bootstrap_or_join_cluster(&manager, &raft).await?;
         Ok(())
     }
 
@@ -76,11 +77,12 @@ impl IronClusterManagerFlow {
 
     // 阶段 2：构建 Raft 运行时。
     pub async fn build_raft_runtime(
-        manager: &IronClusterManager,
+        manager: &mut IronClusterManager,
     ) -> anyhow::Result<(Raft<IronTypeConfig>, IronTcpServer, TcpListener)> {
         let config = IronClusterManagerSupport::build_raft_config()?;
         let tcp_listener = TcpListener::bind(manager.current_node.bind_addr()).await?;
         let tcp_addr = tcp_listener.local_addr()?;
+        manager.current_node.set_resolved_node_port(tcp_addr.port());
         let boot_node_ids = manager.boot_nodes.keys().copied().collect::<BTreeSet<_>>();
 
         let raft = Raft::<IronTypeConfig>::new(
