@@ -1,5 +1,6 @@
 // 集群核心库入口。
 pub mod api;
+pub(crate) mod contract;
 pub(crate) mod control_plane;
 pub(crate) mod data_plane;
 pub(crate) mod raft;

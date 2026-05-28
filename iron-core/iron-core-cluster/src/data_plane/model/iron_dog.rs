@@ -1,5 +1,5 @@
+use crate::contract::iron_cluster_entity_model::IronClusterEntityModel;
 use crate::data_plane::iron_cluster_entity::IronClusterEntity;
-use crate::data_plane::iron_cluster_entity::IronClusterEntityModel;
 
 // IronMesh 集群验证用狗数据模型。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
