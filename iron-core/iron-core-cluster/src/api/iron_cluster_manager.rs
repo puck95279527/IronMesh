@@ -21,18 +21,12 @@ where
 impl IronClusterManager<IronClusterState> {
     // 创建默认状态机的投票节点集群管理器。
     pub fn add_voter(node_id: u64) -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
-            inner: IronClusterManagerCore::add_voter(node_id)?,
-            marker: PhantomData,
-        })
+        Self::add_voter_with_state(node_id)
     }
 
     // 创建默认状态机的学习节点集群管理器。
     pub fn add_learner(advertise_node_ip: impl Into<String>) -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
-            inner: IronClusterManagerCore::add_learner(advertise_node_ip)?,
-            marker: PhantomData,
-        })
+        Self::add_learner_with_state(advertise_node_ip)
     }
 }
 
