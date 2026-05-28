@@ -1,14 +1,23 @@
 use std::collections::BTreeMap;
 use std::io;
 
+use openraft::BasicNode;
+use openraft::Raft;
+use tokio::net::TcpListener;
+
+use crate::control_plane::IronClusterManagerSupport;
 use crate::control_plane::IronClusterNode;
 use crate::control_plane::IronClusterNodeRole;
-use crate::control_plane::IronClusterManagerSupport;
+use crate::raft::IronTypeConfig;
+use crate::raft::network::IronNetworkFactory;
+use crate::raft::network::IronTcpServer;
+use crate::raft::storage::IronLogStore;
+use crate::raft::storage::IronStateMachine;
 
 // IronMesh 集群管理器。
 #[derive(Clone, Debug)]
 pub struct IronClusterManager {
-    pub current_node: IronClusterNode, // 当前集群节点。
+    pub current_node: IronClusterNode,              // 当前集群节点。
     pub boot_nodes: BTreeMap<u64, IronClusterNode>, // 注册节点表，表内节点会作为投票节点加入集群。
 }
 
@@ -51,5 +60,49 @@ impl IronClusterManager {
             },
             boot_nodes,
         })
+    }
+
+    // 启动当前集群节点。
+    pub async fn start(&self) -> anyhow::Result<()> {
+        let config = IronClusterManagerSupport::build_raft_config()?;
+        let tcp_listener = TcpListener::bind(self.current_node.bind_addr()).await?;
+        let tcp_addr = tcp_listener.local_addr()?;
+
+        let raft = Raft::<IronTypeConfig>::new(
+            self.current_node.node_id,
+            config,
+            IronNetworkFactory::default(),
+            IronLogStore::default(),
+            IronStateMachine::default(),
+        )
+        .await?;
+
+        let tcp_server = IronTcpServer::new(raft.clone());
+        tokio::spawn(async move {
+            if let Err(error) = tcp_server.serve(tcp_listener).await {
+                tracing::warn!(%error, "[Iron] [cluster] Raft TCP 服务退出");
+            }
+        });
+
+        tracing::info!(
+            node_id = self.current_node.node_id,
+            tcp_addr = %tcp_addr,
+            "[Iron] [cluster] Raft TCP 服务已启动"
+        );
+
+        if self.current_node.is_boot_node {
+            let mut members = BTreeMap::new();
+            members.insert(
+                self.current_node.node_id,
+                BasicNode::new(self.current_node.node_addr()),
+            );
+            raft.initialize(members).await?;
+            tracing::info!(
+                node_id = self.current_node.node_id,
+                "[Iron] [cluster] 唯一投票节点初始化完成"
+            );
+        }
+
+        Ok(())
     }
 }

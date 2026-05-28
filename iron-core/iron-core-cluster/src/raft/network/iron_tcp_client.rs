@@ -100,7 +100,8 @@ impl RaftNetwork<IronTypeConfig> for IronTcpClient {
         &mut self,
         rpc: AppendEntriesRequest<IronTypeConfig>,
         _option: RPCOption,
-    ) -> Result<AppendEntriesResponse<u64>, RPCError<u64, openraft::BasicNode, RaftError<u64>>> {
+    ) -> Result<AppendEntriesResponse<u64>, RPCError<u64, openraft::BasicNode, RaftError<u64>>>
+    {
         self.send_append_entries(rpc)
             .await
             .map_err(|error| Self::network_error(&error))

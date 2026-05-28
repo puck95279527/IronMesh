@@ -59,9 +59,9 @@ impl IronTcpServer {
         request: IronTcpRequest,
     ) -> Result<IronTcpResponse, io::Error> {
         match request {
-            IronTcpRequest::AppendEntries(rpc) => {
-                Ok(IronTcpResponse::AppendEntries(raft.append_entries(rpc).await))
-            }
+            IronTcpRequest::AppendEntries(rpc) => Ok(IronTcpResponse::AppendEntries(
+                raft.append_entries(rpc).await,
+            )),
             IronTcpRequest::Vote(rpc) => Ok(IronTcpResponse::Vote(raft.vote(rpc).await)),
             IronTcpRequest::FullSnapshot { .. } => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
