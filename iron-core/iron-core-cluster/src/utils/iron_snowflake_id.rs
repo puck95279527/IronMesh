@@ -1,4 +1,5 @@
 use std::hash::{Hash, Hasher};
+use std::io;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,7 +42,7 @@ struct IronSnowflakeAtomicGenerator {
 
 impl IronSnowflakeIdGenerator {
     // 使用全局默认生成器生成下一个 u64 雪花 ID。
-    pub(crate) fn next_u64() -> u64 {
+    pub(crate) fn next_u64() -> anyhow::Result<u64> {
         static GLOBAL_GENERATOR: OnceLock<IronSnowflakeAtomicGenerator> = OnceLock::new();
 
         let generator = GLOBAL_GENERATOR
@@ -107,7 +108,7 @@ impl IronSnowflakeAtomicGenerator {
     }
 
     // 通过 CAS 生成下一个全局 u64 雪花 ID。
-    fn next_id(&self) -> u64 {
+    fn next_id(&self) -> anyhow::Result<u64> {
         loop {
             let old_state = self.state.load(Ordering::Relaxed);
             let old_timestamp_part = old_state >> SNOWFLAKE_SEQUENCE_BITS;
@@ -122,8 +123,11 @@ impl IronSnowflakeAtomicGenerator {
                     let Some(next_timestamp_part) =
                         IronSnowflakeIdGenerator::next_timestamp_after(old_timestamp_part)
                     else {
-                        std::hint::spin_loop();
-                        continue;
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "雪花 ID 时间戳范围已经耗尽，无法继续生成节点 ID",
+                        )
+                        .into());
                     };
                     (next_timestamp_part, next_sequence)
                 } else {
@@ -139,9 +143,9 @@ impl IronSnowflakeAtomicGenerator {
                 .compare_exchange_weak(old_state, next_state, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
-                return (next_timestamp_part << SNOWFLAKE_TIMESTAMP_SHIFT)
+                return Ok((next_timestamp_part << SNOWFLAKE_TIMESTAMP_SHIFT)
                     | ((self.worker_id as u64) << SNOWFLAKE_WORKER_SHIFT)
-                    | next_sequence;
+                    | next_sequence);
             }
 
             std::hint::spin_loop();

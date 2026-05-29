@@ -36,7 +36,7 @@ impl IronClusterManager {
     pub fn add_learner(advertise_node_ip: impl Into<String>) -> anyhow::Result<Self> {
         let boot_nodes = IronClusterManagerSupport::load_cluster_boot()?;
         let node_id = loop {
-            let node_id = IronSnowflakeIdGenerator::next_u64();
+            let node_id = IronSnowflakeIdGenerator::next_u64()?;
             if !boot_nodes.contains_key(&node_id) {
                 break node_id;
             }
