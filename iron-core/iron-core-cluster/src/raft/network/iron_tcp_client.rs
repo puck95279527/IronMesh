@@ -30,6 +30,7 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio_util::codec::Framed;
 
+use crate::control_plane::iron_cluster_config::CLUSTER_JOIN_REQUEST_TIMEOUT;
 use crate::raft::IronTypeConfig;
 use crate::raft::network::iron_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::protocol::IronTcpFrameCodec;
@@ -209,10 +210,14 @@ impl IronTcpClient {
 
     // 发送加入集群请求。
     pub async fn join_cluster(&self, node_id: u64, node_addr: String) -> Result<(), io::Error> {
-        match self
-            .send_request(IronTcpRequest::JoinCluster { node_id, node_addr })
-            .await?
-        {
+        let response = tokio::time::timeout(
+            CLUSTER_JOIN_REQUEST_TIMEOUT,
+            self.send_request(IronTcpRequest::JoinCluster { node_id, node_addr }),
+        )
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "join cluster request timeout"))??;
+
+        match response {
             IronTcpResponse::JoinCluster(result) => result.map_err(io::Error::other),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,

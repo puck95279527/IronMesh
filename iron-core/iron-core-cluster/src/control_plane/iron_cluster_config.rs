@@ -15,6 +15,9 @@ pub(crate) const RAFT_TCP_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 // 节点加入集群失败后的重试间隔。
 pub(crate) const CLUSTER_JOIN_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
+// 节点加入集群 TCP 请求等待响应的最长时间。
+pub(crate) const CLUSTER_JOIN_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
+
 // 本地节点等待 Raft membership 就绪的最长时间。
 pub(crate) const JOIN_LOCAL_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
