@@ -74,16 +74,22 @@ impl IronTcpServer {
             let event_sender = self.event_sender.clone();
 
             tokio::spawn(async move {
-                let result =
+                let close_reason =
                     Self::handle_connection(raft, boot_node_ids, stream, peer_addr, permit).await;
-                let error_message = match &result {
-                    Ok(()) => "Raft TCP 连接已关闭".to_string(),
-                    Err(error) => {
-                        Self::log_connection_error(peer_addr, error);
-                        error.to_string()
+                match close_reason {
+                    Ok(Some(error_message)) => {
+                        Self::report_local_connection_closed(
+                            event_sender,
+                            peer_addr,
+                            error_message,
+                        )
+                        .await;
                     }
-                };
-                Self::report_local_connection_closed(event_sender, peer_addr, error_message).await;
+                    Ok(None) => {}
+                    Err(error) => {
+                        Self::log_connection_error(peer_addr, &error);
+                    }
+                }
             });
         }
     }
@@ -114,36 +120,55 @@ impl IronTcpServer {
         stream: TcpStream,
         peer_addr: SocketAddr,
         _connection_permit: OwnedSemaphorePermit,
-    ) -> Result<(), io::Error> {
+    ) -> Result<Option<String>, io::Error> {
         let mut framed = Framed::new(stream, IronTcpFrameCodec::default());
+        let mut handled_cluster_request = false;
 
         loop {
             let frame = match tokio::time::timeout(RAFT_TCP_READ_TIMEOUT, framed.next()).await {
-                Ok(Some(frame)) => frame?,
-                Ok(None) => return Ok(()),
+                Ok(Some(frame)) => match frame {
+                    Ok(frame) => frame,
+                    Err(error) if handled_cluster_request => return Ok(Some(error.to_string())),
+                    Err(error) => return Err(error),
+                },
+                Ok(None) if handled_cluster_request => {
+                    return Ok(Some("Raft TCP 连接已关闭".to_string()));
+                }
+                Ok(None) => return Ok(None),
                 Err(_) => {
-                    return Err(io::Error::new(
+                    let error = io::Error::new(
                         io::ErrorKind::TimedOut,
                         format!("Raft TCP 读取请求超时: peer_addr={peer_addr}"),
-                    ));
+                    );
+                    if handled_cluster_request {
+                        return Ok(Some(error.to_string()));
+                    }
+                    return Err(error);
                 }
             };
 
-            let request = serde_json::from_slice::<IronTcpRequest>(&frame)
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            let request = match serde_json::from_slice::<IronTcpRequest>(&frame) {
+                Ok(request) => request,
+                Err(error) if handled_cluster_request => return Ok(Some(error.to_string())),
+                Err(error) => return Err(io::Error::new(io::ErrorKind::InvalidData, error)),
+            };
+            handled_cluster_request = true;
             let response =
                 Self::handle_request(raft.clone(), boot_node_ids.clone(), request).await?;
             let response = serde_json::to_vec(&response)
                 .map(Bytes::from)
                 .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-            tokio::time::timeout(RAFT_TCP_WRITE_TIMEOUT, framed.send(response))
+            if let Err(error) = tokio::time::timeout(RAFT_TCP_WRITE_TIMEOUT, framed.send(response))
                 .await
                 .map_err(|_| {
                     io::Error::new(
                         io::ErrorKind::TimedOut,
                         format!("Raft TCP 写入响应超时: peer_addr={peer_addr}"),
                     )
-                })??;
+                })?
+            {
+                return Ok(Some(error.to_string()));
+            }
         }
     }
 

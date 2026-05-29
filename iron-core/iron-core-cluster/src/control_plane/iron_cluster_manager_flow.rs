@@ -17,7 +17,6 @@ use crate::control_plane::IronClusterNodeRole;
 use crate::control_plane::IronClusterRuntime;
 use crate::control_plane::iron_cluster_config::CLUSTER_JOIN_RETRY_INTERVAL;
 use crate::control_plane::iron_cluster_config::JOIN_LOCAL_READY_TIMEOUT;
-use crate::control_plane::iron_cluster_config::LEARNER_REJOIN_AFTER_DISCONNECT_DELAY;
 use crate::control_plane::iron_cluster_config::LEARNER_REMOVE_RETRY_INTERVAL;
 use crate::control_plane::iron_cluster_config::LEARNER_REMOVE_RETRY_LIMIT;
 use crate::control_plane::iron_cluster_config::PEER_CONNECT_TIMEOUT;
@@ -184,7 +183,9 @@ impl IronClusterManagerFlow {
     ) {
         tasks.spawn(async move {
             while let Some(event) = event_receiver.recv().await {
-                Self::handle_raft_network_event(&manager, raft.clone(), event).await;
+                if !Self::handle_raft_network_event(&manager, raft.clone(), event).await {
+                    return;
+                }
             }
         });
     }
@@ -194,7 +195,7 @@ impl IronClusterManagerFlow {
         manager: &IronClusterManager,
         raft: Raft<IronTypeConfig>,
         event: IronRaftNetworkEvent,
-    ) {
+    ) -> bool {
         let (target_node_id, target_addr, error_message) = match event {
             IronRaftNetworkEvent::TargetConnectionFailed {
                 target_node_id,
@@ -205,8 +206,17 @@ impl IronClusterManagerFlow {
                 peer_addr,
                 error_message,
             } => {
-                Self::recover_cluster_connection(manager, &raft, peer_addr, error_message).await;
-                return;
+                if manager.current_node.node_role != IronClusterNodeRole::Learner {
+                    return true;
+                }
+
+                tracing::warn!(
+                    node_id = manager.current_node.node_id,
+                    peer_addr = %peer_addr,
+                    error = %error_message,
+                    "[Iron] [cluster] learner 本地 Raft TCP 连接断开，当前运行时退出并等待外层重启生成新节点 ID"
+                );
+                return false;
             }
         };
 
@@ -231,15 +241,15 @@ impl IronClusterManagerFlow {
             };
 
             if !is_leader {
-                return;
+                return true;
             }
 
             if !is_member {
-                return;
+                return true;
             }
 
             if is_voter {
-                return;
+                return true;
             }
 
             match raft
@@ -256,7 +266,7 @@ impl IronClusterManagerFlow {
                         attempt,
                         "[Iron] [cluster] learner 已从集群 membership 移除"
                     );
-                    return;
+                    return true;
                 }
                 Err(error) if attempt < LEARNER_REMOVE_RETRY_LIMIT => {
                     tracing::warn!(
@@ -276,53 +286,11 @@ impl IronClusterManagerFlow {
                         %error,
                         "[Iron] [cluster] learner 移出集群最终失败"
                     );
-                    return;
+                    return true;
                 }
             }
         }
-    }
-
-    // 恢复当前节点的集群连接。
-    async fn recover_cluster_connection(
-        manager: &IronClusterManager,
-        raft: &Raft<IronTypeConfig>,
-        peer_addr: String,
-        error_message: String,
-    ) {
-        if manager.current_node.node_role != IronClusterNodeRole::Learner {
-            return;
-        }
-
-        tracing::warn!(
-            node_id = manager.current_node.node_id,
-            peer_addr = %peer_addr,
-            error = %error_message,
-            "[Iron] [cluster] learner 本地 TCP 连接断开，准备重新加入集群"
-        );
-
-        tokio::time::sleep(LEARNER_REJOIN_AFTER_DISCONNECT_DELAY).await;
-
-        match Self::try_join_existing_cluster(manager, raft).await {
-            Ok(true) => {
-                tracing::info!(
-                    node_id = manager.current_node.node_id,
-                    "[Iron] [cluster] learner 已恢复集群连接"
-                );
-            }
-            Ok(false) => {
-                tracing::warn!(
-                    node_id = manager.current_node.node_id,
-                    "[Iron] [cluster] learner 恢复集群连接失败，未找到可加入的 leader"
-                );
-            }
-            Err(error) => {
-                tracing::warn!(
-                    node_id = manager.current_node.node_id,
-                    %error,
-                    "[Iron] [cluster] learner 恢复集群连接失败"
-                );
-            }
-        }
+        true
     }
 
     // 阶段 4：加入已有集群或初始化最小集群。
