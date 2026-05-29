@@ -1,6 +1,7 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
+use openraft::BasicNode;
 use openraft::RaftSnapshotBuilder;
 use openraft::Snapshot;
 use openraft::SnapshotMeta;
@@ -16,6 +17,25 @@ use crate::raft::IronTypeConfig;
 pub struct IronStateMachine {
     pub last_applied_log: Arc<Mutex<Option<openraft::LogId<u64>>>>, // 状态机已经应用的最后一条日志标识。
     pub last_membership: Arc<Mutex<openraft::StoredMembership<u64, openraft::BasicNode>>>, // 状态机已经应用的最后一个成员关系。
+    pub current_snapshot_meta: Arc<Mutex<Option<SnapshotMeta<u64, BasicNode>>>>, // 当前状态机快照元数据。
+}
+
+impl IronStateMachine {
+    // 构建当前状态机快照元数据。
+    async fn build_snapshot_meta(&self) -> SnapshotMeta<u64, BasicNode> {
+        let last_applied_log = *self.last_applied_log.lock().await;
+        let last_membership = self.last_membership.lock().await.clone();
+        let snapshot_id = format!(
+            "iron-snapshot-last={last_applied_log:?}-membership={:?}",
+            last_membership.log_id()
+        );
+
+        SnapshotMeta {
+            last_log_id: last_applied_log,
+            last_membership,
+            snapshot_id,
+        }
+    }
 }
 
 impl RaftStateMachine<IronTypeConfig> for IronStateMachine {
@@ -74,9 +94,12 @@ impl RaftStateMachine<IronTypeConfig> for IronStateMachine {
     // 安装已经接收完成的快照。
     async fn install_snapshot(
         &mut self,
-        _meta: &SnapshotMeta<u64, openraft::BasicNode>,
+        meta: &SnapshotMeta<u64, openraft::BasicNode>,
         _snapshot: Box<Cursor<Vec<u8>>>,
     ) -> Result<(), StorageError<u64>> {
+        *self.last_applied_log.lock().await = meta.last_log_id;
+        *self.last_membership.lock().await = meta.last_membership.clone();
+        *self.current_snapshot_meta.lock().await = Some(meta.clone());
         Ok(())
     }
 
@@ -84,15 +107,13 @@ impl RaftStateMachine<IronTypeConfig> for IronStateMachine {
     async fn get_current_snapshot(
         &mut self,
     ) -> Result<Option<Snapshot<IronTypeConfig>>, StorageError<u64>> {
-        let last_applied_log = *self.last_applied_log.lock().await;
-        let last_membership = self.last_membership.lock().await.clone();
+        let meta = match self.current_snapshot_meta.lock().await.clone() {
+            Some(meta) => meta,
+            None => self.build_snapshot_meta().await,
+        };
 
         Ok(Some(Snapshot {
-            meta: SnapshotMeta {
-                last_log_id: last_applied_log,
-                last_membership,
-                snapshot_id: String::new(),
-            },
+            meta,
             snapshot: Box::new(Cursor::new(Vec::new())),
         }))
     }
@@ -101,15 +122,11 @@ impl RaftStateMachine<IronTypeConfig> for IronStateMachine {
 impl RaftSnapshotBuilder<IronTypeConfig> for IronStateMachine {
     // 构建当前状态机快照。
     async fn build_snapshot(&mut self) -> Result<Snapshot<IronTypeConfig>, StorageError<u64>> {
-        let last_applied_log = *self.last_applied_log.lock().await;
-        let last_membership = self.last_membership.lock().await.clone();
+        let meta = self.build_snapshot_meta().await;
+        *self.current_snapshot_meta.lock().await = Some(meta.clone());
 
         Ok(Snapshot {
-            meta: SnapshotMeta {
-                last_log_id: last_applied_log,
-                last_membership,
-                snapshot_id: String::new(),
-            },
+            meta,
             snapshot: Box::new(Cursor::new(Vec::new())),
         })
     }

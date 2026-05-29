@@ -722,6 +722,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "iron-core-cluster",
+ "openraft",
  "serde_json",
  "time",
  "tokio",

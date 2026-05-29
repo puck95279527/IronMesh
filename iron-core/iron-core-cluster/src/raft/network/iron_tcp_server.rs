@@ -74,10 +74,11 @@ impl IronTcpServer {
                 raft.append_entries(rpc).await,
             )),
             IronTcpRequest::Vote(rpc) => Ok(IronTcpResponse::Vote(raft.vote(rpc).await)),
-            IronTcpRequest::FullSnapshot { .. } => Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "full snapshot tcp request is not implemented",
-            )),
+            IronTcpRequest::InstallSnapshot(rpc) => {
+                #[allow(deprecated)]
+                let result = raft.install_snapshot(rpc).await;
+                Ok(IronTcpResponse::InstallSnapshot(result))
+            }
             IronTcpRequest::JoinCluster { node_id, node_addr } => {
                 let result =
                     Self::handle_join_cluster(raft, boot_node_ids, node_id, node_addr).await;

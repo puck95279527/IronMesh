@@ -7,15 +7,21 @@ use futures_util::StreamExt;
 use openraft::Snapshot;
 use openraft::Vote;
 use openraft::error::Fatal;
+use openraft::error::InstallSnapshotError;
 use openraft::error::NetworkError;
 use openraft::error::RPCError;
 use openraft::error::RaftError;
+use openraft::error::RemoteError;
 use openraft::error::ReplicationClosed;
 use openraft::error::StreamingError;
 use openraft::network::RPCOption;
 use openraft::network::RaftNetwork;
+use openraft::network::snapshot_transport::Chunked;
+use openraft::network::snapshot_transport::SnapshotTransport;
 use openraft::raft::AppendEntriesRequest;
 use openraft::raft::AppendEntriesResponse;
+use openraft::raft::InstallSnapshotRequest;
+use openraft::raft::InstallSnapshotResponse;
 use openraft::raft::SnapshotResponse;
 use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
@@ -274,9 +280,12 @@ impl IronTcpClient {
     }
 
     // 创建网络错误。
-    fn network_error(
+    fn network_error<E>(
         error: &(impl std::error::Error + 'static),
-    ) -> RPCError<u64, openraft::BasicNode, RaftError<u64>> {
+    ) -> RPCError<u64, openraft::BasicNode, E>
+    where
+        E: std::error::Error + 'static,
+    {
         RPCError::Network(NetworkError::new(error))
     }
 
@@ -327,14 +336,54 @@ impl RaftNetwork<IronTypeConfig> for IronTcpClient {
             .map_err(|error| Self::network_error(&error))
     }
 
+    // 发送安装快照分片请求。
+    #[allow(deprecated)]
+    async fn install_snapshot(
+        &mut self,
+        rpc: InstallSnapshotRequest<IronTypeConfig>,
+        option: RPCOption,
+    ) -> Result<
+        InstallSnapshotResponse<u64>,
+        RPCError<u64, openraft::BasicNode, RaftError<u64, InstallSnapshotError>>,
+    > {
+        let response = self
+            .send_raft_request_with_option(IronTcpRequest::InstallSnapshot(rpc), &option)
+            .await
+            .map_err(|error| Self::network_error(&error))?;
+        let Some(target_node_id) = self.target_node_id else {
+            let error = io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "install snapshot raft client missing target node id",
+            );
+            return Err(Self::network_error(&error));
+        };
+
+        match response {
+            IronTcpResponse::InstallSnapshot(result) => result.map_err(|error| {
+                RPCError::RemoteError(RemoteError::new_with_node(
+                    target_node_id,
+                    openraft::BasicNode::new(self.target_addr.clone()),
+                    error,
+                ))
+            }),
+            _ => {
+                let error = io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unexpected install snapshot response",
+                );
+                Err(Self::network_error(&error))
+            }
+        }
+    }
+
     // 发送完整快照。
     async fn full_snapshot(
         &mut self,
-        _vote: Vote<u64>,
-        _snapshot: Snapshot<IronTypeConfig>,
-        _cancel: impl Future<Output = ReplicationClosed> + openraft::OptionalSend + 'static,
-        _option: RPCOption,
+        vote: Vote<u64>,
+        snapshot: Snapshot<IronTypeConfig>,
+        cancel: impl Future<Output = ReplicationClosed> + openraft::OptionalSend + 'static,
+        option: RPCOption,
     ) -> Result<SnapshotResponse<u64>, StreamingError<IronTypeConfig, Fatal<u64>>> {
-        unimplemented!()
+        Chunked::send_snapshot(self, vote, snapshot, cancel, option).await
     }
 }

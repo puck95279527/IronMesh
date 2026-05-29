@@ -13,5 +13,6 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true
+openraft.workspace = true
 serde_json.workspace = true
 tokio-util.workspace = true
