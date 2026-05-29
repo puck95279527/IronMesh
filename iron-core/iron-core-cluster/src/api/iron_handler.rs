@@ -40,14 +40,15 @@ impl IronHandler {
                         %error,
                         "[Iron] [cluster] learner 运行时已退出，准备生成新节点 ID 并重新加入集群"
                     );
+                    runtime.abort_tasks().await;
 
                     let cluster_manager =
                         IronClusterManager::add_learner(advertise_node_ip.clone())?;
                     runtime = cluster_manager.start().await?;
 
                     tracing::info!(
-                        node_id = cluster_manager.current_node.node_id,
-                        node_addr = %cluster_manager.current_node.node_addr(),
+                        node_id = runtime.current_node_id(),
+                        node_addr = %runtime.current_node_addr(),
                         "[Iron] [cluster] learner 运行时已重建"
                     );
                 }

@@ -46,6 +46,12 @@ impl IronClusterRuntime {
         &self.raft
     }
 
+    // 主动停止当前运行时中尚未退出的后台任务。
+    pub async fn abort_tasks(&self) {
+        let mut tasks = self.tasks.lock().await;
+        tasks.abort_all();
+    }
+
     // 等待关闭信号或后台任务退出。
     pub async fn wait_shutdown(&self) -> anyhow::Result<()> {
         let ctrl_c = tokio::signal::ctrl_c();
