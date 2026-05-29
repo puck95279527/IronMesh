@@ -2,7 +2,7 @@ use std::io;
 
 use bytes::BufMut;
 use bytes::BytesMut;
-use iron_core_cluster::constant::IRON_TCP_MAX_FRAME_BYTES;
+use iron_core_cluster::control_plane::iron_cluster_config::IRON_TCP_MAX_FRAME_BYTES;
 use iron_core_cluster::raft::network::IronTcpFrameCodec;
 use iron_core_cluster::raft::network::IronTcpRequest;
 use tokio_util::codec::Decoder;
@@ -26,7 +26,8 @@ fn small_tcp_frame_can_encode_and_decode() {
         .decode(&mut buffer)
         .expect("小帧解码不应该报错")
         .expect("小帧应该已经完整");
-    let decoded_request = IronTcpFrameCodec::decode_request(frame).expect("请求内容解码应该成功");
+    let decoded_request: IronTcpRequest =
+        serde_json::from_slice(&frame).expect("请求内容解码应该成功");
 
     match decoded_request {
         IronTcpRequest::JoinCluster { node_id, node_addr } => {

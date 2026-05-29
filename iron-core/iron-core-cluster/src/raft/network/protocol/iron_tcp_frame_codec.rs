@@ -16,12 +16,6 @@ use crate::raft::network::protocol::IronTcpResponse;
 pub struct IronTcpFrameCodec;
 
 impl IronTcpFrameCodec {
-    // 从 JSON 字节解码 TCP 请求。
-    pub fn decode_request(frame: Bytes) -> Result<IronTcpRequest, io::Error> {
-        serde_json::from_slice::<IronTcpRequest>(&frame)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
-    }
-
     // 把 TCP 请求编码成 JSON 字节。
     pub fn encode_request(request: &IronTcpRequest) -> Result<Bytes, io::Error> {
         serde_json::to_vec(request)
@@ -32,13 +26,6 @@ impl IronTcpFrameCodec {
     // 从 JSON 字节解码 TCP 响应。
     pub fn decode_response(frame: Bytes) -> Result<IronTcpResponse, io::Error> {
         serde_json::from_slice::<IronTcpResponse>(&frame)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
-    }
-
-    // 把 TCP 响应编码成 JSON 字节。
-    pub fn encode_response(response: &IronTcpResponse) -> Result<Bytes, io::Error> {
-        serde_json::to_vec(response)
-            .map(Bytes::from)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 }

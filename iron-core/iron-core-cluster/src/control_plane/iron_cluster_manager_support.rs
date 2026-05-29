@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io;
-use std::sync::Arc;
 
 use toml::Value;
 
@@ -14,11 +13,6 @@ use crate::control_plane::IronClusterNodeRole;
 pub struct IronClusterManagerSupport;
 
 impl IronClusterManagerSupport {
-    // 构建 OpenRaft 运行配置。
-    pub fn build_raft_config() -> anyhow::Result<Arc<openraft::Config>> {
-        Ok(Arc::new(openraft::Config::default().validate()?))
-    }
-
     // 从 cluster-boot.toml 读取集群启动节点配置。
     pub fn load_cluster_boot() -> anyhow::Result<BTreeMap<u64, IronClusterNode>> {
         let config_path = env::current_exe()?

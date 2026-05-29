@@ -3,6 +3,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use bytes::Bytes;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use openraft::ChangeMembers;
@@ -95,10 +96,13 @@ impl IronTcpServer {
                 }
             };
 
-            let request = IronTcpFrameCodec::decode_request(frame)?;
+            let request = serde_json::from_slice::<IronTcpRequest>(&frame)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
             let response =
                 Self::handle_request(raft.clone(), boot_node_ids.clone(), request).await?;
-            let response = IronTcpFrameCodec::encode_response(&response)?;
+            let response = serde_json::to_vec(&response)
+                .map(Bytes::from)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
             tokio::time::timeout(RAFT_TCP_WRITE_TIMEOUT, framed.send(response))
                 .await
                 .map_err(|_| {

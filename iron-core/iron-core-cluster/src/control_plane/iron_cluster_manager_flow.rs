@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::io;
+use std::sync::Arc;
 
 use openraft::BasicNode;
 use openraft::ChangeMembers;
@@ -12,7 +13,6 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::control_plane::IronClusterManager;
-use crate::control_plane::IronClusterManagerSupport;
 use crate::control_plane::IronClusterNodeRole;
 use crate::control_plane::IronClusterRuntime;
 use crate::control_plane::iron_cluster_config::CLUSTER_JOIN_RETRY_INTERVAL;
@@ -99,10 +99,15 @@ impl IronClusterManagerFlow {
         TcpListener,
         mpsc::Receiver<IronRaftNetworkEvent>,
     )> {
-        let config = IronClusterManagerSupport::build_raft_config()?;
-        let tcp_listener = TcpListener::bind(manager.current_node.bind_addr()).await?;
+        let config = Arc::new(openraft::Config::default().validate()?);
+        let bind_addr = format!(
+            "{}:{}",
+            manager.current_node.node_ip,
+            manager.current_node.node_port.unwrap_or(0)
+        );
+        let tcp_listener = TcpListener::bind(bind_addr).await?;
         let tcp_addr = tcp_listener.local_addr()?;
-        manager.current_node.set_resolved_node_port(tcp_addr.port());
+        manager.current_node.node_port = Some(tcp_addr.port());
         let boot_node_ids = manager.boot_nodes.keys().copied().collect::<BTreeSet<_>>();
         let (network_event_sender, network_event_receiver) =
             mpsc::channel(RAFT_NETWORK_EVENT_CHANNEL_CAPACITY);
@@ -288,7 +293,10 @@ impl IronClusterManagerFlow {
             }
 
             let peer_addr = peer.node_addr();
-            if !Self::is_peer_reachable(&peer_addr).await {
+            if !matches!(
+                tokio::time::timeout(PEER_CONNECT_TIMEOUT, TcpStream::connect(&peer_addr)).await,
+                Ok(Ok(_))
+            ) {
                 continue;
             }
 
@@ -382,13 +390,5 @@ impl IronClusterManagerFlow {
             "[Iron] [cluster] 最小 Raft 集群初始化完成"
         );
         Ok(())
-    }
-
-    // 探测目标节点 TCP 地址是否可达。
-    async fn is_peer_reachable(node_addr: &str) -> bool {
-        matches!(
-            tokio::time::timeout(PEER_CONNECT_TIMEOUT, TcpStream::connect(node_addr)).await,
-            Ok(Ok(_))
-        )
     }
 }
