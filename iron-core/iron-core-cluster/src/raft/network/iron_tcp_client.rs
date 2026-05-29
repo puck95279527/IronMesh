@@ -30,12 +30,15 @@ use crate::raft::network::protocol::IronTcpFrameCodec;
 use crate::raft::network::protocol::IronTcpRequest;
 use crate::raft::network::protocol::IronTcpResponse;
 
+// Raft TCP 目标节点连接缓存。
+pub type IronTcpCachedStream = Arc<Mutex<Option<TcpStream>>>;
+
 // IronMesh Raft TCP 客户端。
 #[derive(Clone, Debug, Default)]
 pub struct IronTcpClient {
-    pub target_node_id: Option<u64>,                  // 目标节点标识。
-    pub target_addr: String,                          // 目标节点 TCP 地址。
-    pub cached_stream: Arc<Mutex<Option<TcpStream>>>, // Raft RPC 目标节点长连接缓存。
+    pub target_node_id: Option<u64>,        // 目标节点标识。
+    pub target_addr: String,                // 目标节点 TCP 地址。
+    pub cached_stream: IronTcpCachedStream, // Raft RPC 目标节点长连接缓存。
     pub(crate) event_sender: Option<mpsc::Sender<IronRaftNetworkEvent>>, // 可选的 TCP 连接事件发送器。
 }
 
@@ -54,12 +57,13 @@ impl IronTcpClient {
     pub(crate) fn new_raft_client(
         target_node_id: u64,
         target_addr: String,
+        cached_stream: IronTcpCachedStream,
         event_sender: Option<mpsc::Sender<IronRaftNetworkEvent>>,
     ) -> Self {
         Self {
             target_node_id: Some(target_node_id),
             target_addr,
-            cached_stream: Arc::new(Mutex::new(None)),
+            cached_stream,
             event_sender,
         }
     }
