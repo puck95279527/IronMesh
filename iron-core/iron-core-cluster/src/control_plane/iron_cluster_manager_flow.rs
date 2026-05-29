@@ -39,7 +39,7 @@ impl IronClusterManagerFlow {
     pub async fn start(manager: &IronClusterManager) -> anyhow::Result<IronClusterRuntime> {
         let mut manager = manager.clone();
         Self::validate_topology(&manager)?;
-        let (raft, tcp_server, tcp_listener, network_event_receiver) =
+        let (raft, tcp_server, tcp_listener, network_event_receiver, network_factory) =
             Self::build_raft_runtime(&mut manager).await?;
         let tasks = Self::spawn_runtime_services(
             &manager,
@@ -47,6 +47,7 @@ impl IronClusterManagerFlow {
             tcp_server,
             tcp_listener,
             network_event_receiver,
+            network_factory,
         );
         Self::bootstrap_or_join_cluster(&manager, &raft).await?;
         Ok(IronClusterRuntime::new(manager.current_node, raft, tasks))
@@ -98,6 +99,7 @@ impl IronClusterManagerFlow {
         IronTcpServer,
         TcpListener,
         mpsc::Receiver<IronRaftNetworkEvent>,
+        IronNetworkFactory,
     )> {
         let config = Arc::new(openraft::Config::default().validate()?);
         let bind_addr = format!(
@@ -113,10 +115,12 @@ impl IronClusterManagerFlow {
             mpsc::channel(RAFT_NETWORK_EVENT_CHANNEL_CAPACITY);
         let tcp_server_event_sender = network_event_sender.clone();
 
+        let network_factory = IronNetworkFactory::new(network_event_sender);
+
         let raft = Raft::<IronTypeConfig>::new(
             manager.current_node.node_id,
             config,
-            IronNetworkFactory::new(network_event_sender),
+            network_factory.clone(),
             IronLogStore::default(),
             IronStateMachine::default(),
         )
@@ -129,7 +133,13 @@ impl IronClusterManagerFlow {
         );
 
         let tcp_server = IronTcpServer::new(raft.clone(), boot_node_ids, tcp_server_event_sender);
-        Ok((raft, tcp_server, tcp_listener, network_event_receiver))
+        Ok((
+            raft,
+            tcp_server,
+            tcp_listener,
+            network_event_receiver,
+            network_factory,
+        ))
     }
 
     // 阶段 3：启动后台运行服务。
@@ -139,6 +149,7 @@ impl IronClusterManagerFlow {
         tcp_server: IronTcpServer,
         tcp_listener: TcpListener,
         network_event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
+        network_factory: IronNetworkFactory,
     ) -> JoinSet<()> {
         let mut tasks = JoinSet::new();
         Self::spawn_cluster_connection_event_handler(
@@ -146,6 +157,7 @@ impl IronClusterManagerFlow {
             manager.clone(),
             raft.clone(),
             network_event_receiver,
+            network_factory,
         );
 
         tasks.spawn(async move {
@@ -180,10 +192,13 @@ impl IronClusterManagerFlow {
         manager: IronClusterManager,
         raft: Raft<IronTypeConfig>,
         mut event_receiver: mpsc::Receiver<IronRaftNetworkEvent>,
+        network_factory: IronNetworkFactory,
     ) {
         tasks.spawn(async move {
             while let Some(event) = event_receiver.recv().await {
-                if !Self::handle_raft_network_event(&manager, raft.clone(), event).await {
+                if !Self::handle_raft_network_event(&manager, raft.clone(), event, &network_factory)
+                    .await
+                {
                     return;
                 }
             }
@@ -195,6 +210,7 @@ impl IronClusterManagerFlow {
         manager: &IronClusterManager,
         raft: Raft<IronTypeConfig>,
         event: IronRaftNetworkEvent,
+        network_factory: &IronNetworkFactory,
     ) -> bool {
         let (target_node_id, target_addr, error_message) = match event {
             IronRaftNetworkEvent::TargetConnectionFailed {
@@ -245,6 +261,7 @@ impl IronClusterManagerFlow {
             }
 
             if !is_member {
+                network_factory.remove_cached_stream(target_node_id).await;
                 return true;
             }
 
@@ -260,6 +277,7 @@ impl IronClusterManagerFlow {
                 .await
             {
                 Ok(_) => {
+                    network_factory.remove_cached_stream(target_node_id).await;
                     tracing::info!(
                         target_node_id,
                         target_addr = %target_addr,

@@ -84,6 +84,17 @@ impl IronNetworkFactory {
         );
         cached_stream
     }
+
+    // 移除指定目标节点的共享连接缓存。
+    pub(crate) async fn remove_cached_stream(&self, target_node_id: u64) {
+        let mut guard = self.shared_connections.lock().await;
+        if guard.remove(&target_node_id).is_some() {
+            tracing::debug!(
+                target_node_id,
+                "[Iron] [cluster] Raft TCP 已移除共享连接缓存"
+            );
+        }
+    }
 }
 
 impl RaftNetworkFactory<IronTypeConfig> for IronNetworkFactory {

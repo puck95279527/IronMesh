@@ -15,8 +15,10 @@ use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 use tokio::sync::TryAcquireError;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use tokio_util::codec::Framed;
 
+use crate::control_plane::iron_cluster_config::PEER_CONNECT_TIMEOUT;
 use crate::control_plane::iron_cluster_config::RAFT_TCP_MAX_CONNECTIONS;
 use crate::control_plane::iron_cluster_config::RAFT_TCP_READ_TIMEOUT;
 use crate::control_plane::iron_cluster_config::RAFT_TCP_WRITE_TIMEOUT;
@@ -52,45 +54,59 @@ impl IronTcpServer {
 
     // 启动 TCP 服务端并持续处理连接。
     pub async fn serve(self, listener: TcpListener) -> Result<(), io::Error> {
+        let mut connection_tasks = JoinSet::new();
+
         loop {
-            let (stream, peer_addr) = listener.accept().await?;
-            let permit = match self.connection_limiter.clone().try_acquire_owned() {
-                Ok(permit) => permit,
-                Err(TryAcquireError::NoPermits) => {
-                    tracing::warn!(
-                        %peer_addr,
-                        max_connections = RAFT_TCP_MAX_CONNECTIONS,
-                        "[Iron] [cluster] Raft TCP 连接数已达上限，拒绝新连接"
-                    );
-                    continue;
-                }
-                Err(TryAcquireError::Closed) => {
-                    return Err(io::Error::other("Raft TCP 连接限制器已关闭"));
-                }
-            };
+            tokio::select! {
+                accept_result = listener.accept() => {
+                    let (stream, peer_addr) = accept_result?;
+                    let permit = match self.connection_limiter.clone().try_acquire_owned() {
+                        Ok(permit) => permit,
+                        Err(TryAcquireError::NoPermits) => {
+                            tracing::warn!(
+                                %peer_addr,
+                                max_connections = RAFT_TCP_MAX_CONNECTIONS,
+                                "[Iron] [cluster] Raft TCP 连接数已达上限，拒绝新连接"
+                            );
+                            continue;
+                        }
+                        Err(TryAcquireError::Closed) => {
+                            return Err(io::Error::other("Raft TCP 连接限制器已关闭"));
+                        }
+                    };
 
-            let raft = self.raft.clone();
-            let boot_node_ids = self.boot_node_ids.clone();
-            let event_sender = self.event_sender.clone();
+                    let raft = self.raft.clone();
+                    let boot_node_ids = self.boot_node_ids.clone();
+                    let event_sender = self.event_sender.clone();
 
-            tokio::spawn(async move {
-                let close_reason =
-                    Self::handle_connection(raft, boot_node_ids, stream, peer_addr, permit).await;
-                match close_reason {
-                    Ok(Some(error_message)) => {
-                        Self::report_local_connection_closed(
-                            event_sender,
-                            peer_addr,
-                            error_message,
-                        )
-                        .await;
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        Self::log_connection_error(peer_addr, &error);
+                    connection_tasks.spawn(async move {
+                        let close_reason =
+                            Self::handle_connection(raft, boot_node_ids, stream, peer_addr, permit).await;
+                        match close_reason {
+                            Ok(Some(error_message)) => {
+                                Self::report_local_connection_closed(
+                                    event_sender,
+                                    peer_addr,
+                                    error_message,
+                                )
+                                .await;
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                Self::log_connection_error(peer_addr, &error);
+                            }
+                        }
+                    });
+                }
+                task_result = connection_tasks.join_next(), if !connection_tasks.is_empty() => {
+                    if let Some(Err(error)) = task_result {
+                        tracing::warn!(
+                            %error,
+                            "[Iron] [cluster] Raft TCP 连接任务执行失败"
+                        );
                     }
                 }
-            });
+            }
         }
     }
 
@@ -253,6 +269,20 @@ impl IronTcpServer {
             node_addr = %node_addr,
             "[Iron] [cluster] leader 收到节点加入集群请求"
         );
+
+        match tokio::time::timeout(PEER_CONNECT_TIMEOUT, TcpStream::connect(&node_addr)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                return Err(format!(
+                    "请求加入节点地址不可达，node_id={node_id}, node_addr={node_addr}, error={error}"
+                ));
+            }
+            Err(_) => {
+                return Err(format!(
+                    "请求加入节点地址连接超时，node_id={node_id}, node_addr={node_addr}"
+                ));
+            }
+        }
 
         raft.add_learner(node_id, openraft::BasicNode::new(node_addr.clone()), true)
             .await
