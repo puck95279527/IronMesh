@@ -6,8 +6,8 @@ use crate::control_plane::IronClusterRuntime;
 // IronMesh 集群处理器。
 #[derive(Clone, Debug)]
 pub struct IronHandler {
-    pub controller: IronController,          // 集群控制器。
-    pub runtime: Option<IronClusterRuntime>, // 集群运行时。
+    pub(crate) controller: IronController,          // 集群控制器。
+    pub(crate) runtime: Option<IronClusterRuntime>, // 集群运行时。
 }
 
 impl IronHandler {

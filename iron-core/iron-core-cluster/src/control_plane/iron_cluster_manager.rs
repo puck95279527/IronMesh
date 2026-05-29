@@ -11,8 +11,8 @@ use crate::utils::IronSnowflakeIdGenerator;
 // IronMesh 集群管理器。
 #[derive(Clone, Debug)]
 pub struct IronClusterManager {
-    pub current_node: IronClusterNode,              // 当前集群节点。
-    pub boot_nodes: BTreeMap<u64, IronClusterNode>, // 注册节点表，表内节点会作为投票节点加入集群。
+    pub(crate) current_node: IronClusterNode, // 当前集群节点。
+    pub(crate) boot_nodes: BTreeMap<u64, IronClusterNode>, // 注册节点表，表内节点会作为投票节点加入集群。
 }
 
 impl IronClusterManager {

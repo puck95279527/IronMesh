@@ -4,7 +4,7 @@ use crate::control_plane::IronClusterManager;
 // IronMesh 集群控制器。
 #[derive(Clone, Debug)]
 pub struct IronController {
-    pub cluster_manager: IronClusterManager, // 集群管理器。
+    pub(crate) cluster_manager: IronClusterManager, // 集群管理器。
 }
 
 impl IronController {

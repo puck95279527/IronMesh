@@ -31,9 +31,9 @@ use crate::raft::network::protocol::IronTcpResponse;
 // IronMesh Raft TCP 服务端。
 #[derive(Clone)]
 pub struct IronTcpServer {
-    pub raft: Raft<IronTypeConfig>,                   // Raft 节点句柄。
-    pub boot_node_ids: BTreeSet<u64>,                 // 注册节点 ID 表。
-    connection_limiter: Arc<Semaphore>,               // TCP 连接并发限制器。
+    pub(crate) raft: Raft<IronTypeConfig>,   // Raft 节点句柄。
+    pub(crate) boot_node_ids: BTreeSet<u64>, // 注册节点 ID 表。
+    connection_limiter: Arc<Semaphore>,      // TCP 连接并发限制器。
     event_sender: mpsc::Sender<IronRaftNetworkEvent>, // TCP 连接事件发送器。
 }
 
@@ -53,7 +53,7 @@ impl IronTcpServer {
     }
 
     // 启动 TCP 服务端并持续处理连接。
-    pub async fn serve(self, listener: TcpListener) -> Result<(), io::Error> {
+    pub(crate) async fn serve(self, listener: TcpListener) -> Result<(), io::Error> {
         let mut connection_tasks = JoinSet::new();
 
         loop {
@@ -121,11 +121,20 @@ impl IronTcpServer {
             error_message,
         };
 
-        if event_sender.send(event).await.is_err() {
-            tracing::warn!(
-                %peer_addr,
-                "[Iron] [cluster] Raft TCP 本地断线事件接收任务已关闭"
-            );
+        match event_sender.try_send(event) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                tracing::warn!(
+                    %peer_addr,
+                    "[Iron] [cluster] Raft TCP 本地断线事件队列已满，本次事件已丢弃"
+                );
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                tracing::warn!(
+                    %peer_addr,
+                    "[Iron] [cluster] Raft TCP 本地断线事件接收任务已关闭"
+                );
+            }
         }
     }
 
@@ -137,17 +146,19 @@ impl IronTcpServer {
         peer_addr: SocketAddr,
         _connection_permit: OwnedSemaphorePermit,
     ) -> Result<Option<String>, io::Error> {
-        let mut framed = Framed::new(stream, IronTcpFrameCodec::default());
-        let mut handled_cluster_request = false;
+        let mut framed = Framed::new(stream, IronTcpFrameCodec);
+        let mut handled_replication_request = false;
 
         loop {
             let frame = match tokio::time::timeout(RAFT_TCP_READ_TIMEOUT, framed.next()).await {
                 Ok(Some(frame)) => match frame {
                     Ok(frame) => frame,
-                    Err(error) if handled_cluster_request => return Ok(Some(error.to_string())),
+                    Err(error) if handled_replication_request => {
+                        return Ok(Some(error.to_string()));
+                    }
                     Err(error) => return Err(error),
                 },
-                Ok(None) if handled_cluster_request => {
+                Ok(None) if handled_replication_request => {
                     return Ok(Some("Raft TCP 连接已关闭".to_string()));
                 }
                 Ok(None) => return Ok(None),
@@ -156,7 +167,7 @@ impl IronTcpServer {
                         io::ErrorKind::TimedOut,
                         format!("Raft TCP 读取请求超时: peer_addr={peer_addr}"),
                     );
-                    if handled_cluster_request {
+                    if handled_replication_request {
                         return Ok(Some(error.to_string()));
                     }
                     return Err(error);
@@ -165,10 +176,15 @@ impl IronTcpServer {
 
             let request = match serde_json::from_slice::<IronTcpRequest>(&frame) {
                 Ok(request) => request,
-                Err(error) if handled_cluster_request => return Ok(Some(error.to_string())),
+                Err(error) if handled_replication_request => return Ok(Some(error.to_string())),
                 Err(error) => return Err(io::Error::new(io::ErrorKind::InvalidData, error)),
             };
-            handled_cluster_request = true;
+            if matches!(
+                request,
+                IronTcpRequest::AppendEntries(_) | IronTcpRequest::InstallSnapshot(_)
+            ) {
+                handled_replication_request = true;
+            }
             let response =
                 Self::handle_request(raft.clone(), boot_node_ids.clone(), request).await?;
             let response = serde_json::to_vec(&response)

@@ -43,9 +43,9 @@ pub type IronTcpCachedStream = Arc<Mutex<Option<TcpStream>>>;
 // IronMesh Raft TCP 客户端。
 #[derive(Clone, Debug, Default)]
 pub struct IronTcpClient {
-    pub target_node_id: Option<u64>,        // 目标节点标识。
-    pub target_addr: String,                // 目标节点 TCP 地址。
-    pub cached_stream: IronTcpCachedStream, // Raft RPC 目标节点长连接缓存。
+    pub(crate) target_node_id: Option<u64>, // 目标节点标识。
+    pub(crate) target_addr: String,         // 目标节点 TCP 地址。
+    pub(crate) cached_stream: IronTcpCachedStream, // Raft RPC 目标节点长连接缓存。
     pub(crate) event_sender: Option<mpsc::Sender<IronRaftNetworkEvent>>, // 可选的 TCP 连接事件发送器。
 }
 
@@ -78,7 +78,7 @@ impl IronTcpClient {
     // 发送一个 TCP 请求。
     async fn send_request(&self, request: IronTcpRequest) -> Result<IronTcpResponse, io::Error> {
         let stream = TcpStream::connect(&self.target_addr).await?;
-        let mut framed = Framed::new(stream, IronTcpFrameCodec::default());
+        let mut framed = Framed::new(stream, IronTcpFrameCodec);
         let request = IronTcpFrameCodec::encode_request(&request)?;
 
         framed.send(request).await?;
@@ -119,8 +119,10 @@ impl IronTcpClient {
             *guard = Some(TcpStream::connect(&self.target_addr).await?);
         }
 
-        let stream = guard.as_mut().expect("cached stream must exist");
-        let mut framed = Framed::new(stream, IronTcpFrameCodec::default());
+        let Some(stream) = guard.as_mut() else {
+            return Err(io::Error::other("cached stream must exist"));
+        };
+        let mut framed = Framed::new(stream, IronTcpFrameCodec);
         let request = IronTcpFrameCodec::encode_request(request)?;
 
         if let Err(error) = framed.send(request).await {
@@ -249,12 +251,22 @@ impl IronTcpClient {
             error_message: error.to_string(),
         };
 
-        if event_sender.send(event).await.is_err() {
-            tracing::warn!(
-                target_node_id,
-                target_addr = %self.target_addr,
-                "[Iron] [cluster] Raft TCP 断线事件接收任务已关闭"
-            );
+        match event_sender.try_send(event) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                tracing::warn!(
+                    target_node_id,
+                    target_addr = %self.target_addr,
+                    "[Iron] [cluster] Raft TCP 断线事件队列已满，本次事件已丢弃"
+                );
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                tracing::warn!(
+                    target_node_id,
+                    target_addr = %self.target_addr,
+                    "[Iron] [cluster] Raft TCP 断线事件接收任务已关闭"
+                );
+            }
         }
     }
 }
@@ -270,9 +282,7 @@ impl RaftNetwork<IronTypeConfig> for IronTcpClient {
         self.send_raft_request_with_option(IronTcpRequest::AppendEntries(rpc), &option)
             .await
             .and_then(|response| match response {
-                IronTcpResponse::AppendEntries(result) => {
-                    result.map_err(|error| io::Error::new(io::ErrorKind::Other, error))
-                }
+                IronTcpResponse::AppendEntries(result) => result.map_err(io::Error::other),
                 _ => Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "unexpected append entries response",
@@ -290,9 +300,7 @@ impl RaftNetwork<IronTypeConfig> for IronTcpClient {
         self.send_raft_request_with_option(IronTcpRequest::Vote(rpc), &option)
             .await
             .and_then(|response| match response {
-                IronTcpResponse::Vote(result) => {
-                    result.map_err(|error| io::Error::new(io::ErrorKind::Other, error))
-                }
+                IronTcpResponse::Vote(result) => result.map_err(io::Error::other),
                 _ => Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "unexpected vote response",

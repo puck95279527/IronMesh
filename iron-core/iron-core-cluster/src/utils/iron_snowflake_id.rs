@@ -123,8 +123,7 @@ impl IronSnowflakeAtomicGenerator {
                     let Some(next_timestamp_part) =
                         IronSnowflakeIdGenerator::next_timestamp_after(old_timestamp_part)
                     else {
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
+                        return Err(io::Error::other(
                             "雪花 ID 时间戳范围已经耗尽，无法继续生成节点 ID",
                         )
                         .into());

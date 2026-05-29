@@ -19,7 +19,7 @@ pub struct IronClusterRuntime {
 
 impl IronClusterRuntime {
     // 创建集群运行时。
-    pub fn new(
+    pub(crate) fn new(
         current_node: IronClusterNode,
         raft: Raft<IronTypeConfig>,
         tasks: JoinSet<()>,
@@ -47,7 +47,7 @@ impl IronClusterRuntime {
     }
 
     // 主动停止当前运行时中尚未退出的后台任务。
-    pub async fn abort_tasks(&self) {
+    pub(crate) async fn abort_tasks(&self) {
         let mut tasks = self.tasks.lock().await;
         tasks.abort_all();
     }
