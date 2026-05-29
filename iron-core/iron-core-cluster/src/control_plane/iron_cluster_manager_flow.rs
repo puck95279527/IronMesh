@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::io;
-use std::time::Duration;
 
 use openraft::BasicNode;
 use openraft::ChangeMembers;
@@ -12,6 +11,12 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
+use crate::constant::CLUSTER_JOIN_RETRY_INTERVAL;
+use crate::constant::JOIN_LOCAL_READY_TIMEOUT;
+use crate::constant::LEARNER_REMOVE_RETRY_INTERVAL;
+use crate::constant::LEARNER_REMOVE_RETRY_LIMIT;
+use crate::constant::PEER_CONNECT_TIMEOUT;
+use crate::constant::RAFT_NETWORK_EVENT_CHANNEL_CAPACITY;
 use crate::control_plane::IronClusterManager;
 use crate::control_plane::IronClusterManagerSupport;
 use crate::control_plane::IronClusterNodeRole;
@@ -24,12 +29,6 @@ use crate::raft::network::IronTcpServer;
 use crate::raft::network::iron_network_factory::IronRaftNetworkEvent;
 use crate::raft::storage::IronLogStore;
 use crate::raft::storage::IronStateMachine;
-
-const CLUSTER_JOIN_RETRY_INTERVAL: Duration = Duration::from_secs(1);
-const JOIN_LOCAL_READY_TIMEOUT: Duration = Duration::from_secs(5);
-const LEARNER_REMOVE_RETRY_INTERVAL: Duration = Duration::from_millis(200);
-const LEARNER_REMOVE_RETRY_LIMIT: usize = 3;
-const PEER_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 
 // IronMesh 集群管理启动流程。
 #[derive(Clone, Debug, Default)]
@@ -105,7 +104,8 @@ impl IronClusterManagerFlow {
         let tcp_addr = tcp_listener.local_addr()?;
         manager.current_node.set_resolved_node_port(tcp_addr.port());
         let boot_node_ids = manager.boot_nodes.keys().copied().collect::<BTreeSet<_>>();
-        let (network_event_sender, network_event_receiver) = mpsc::channel(1024);
+        let (network_event_sender, network_event_receiver) =
+            mpsc::channel(RAFT_NETWORK_EVENT_CHANNEL_CAPACITY);
 
         let raft = Raft::<IronTypeConfig>::new(
             manager.current_node.node_id,

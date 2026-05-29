@@ -720,10 +720,12 @@ version = "0.1.0"
 name = "iron-zenith-cluster-lab"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "iron-core-cluster",
  "serde_json",
  "time",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

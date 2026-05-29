@@ -7,28 +7,34 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const IRON_SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 
 // 雪花 ID 中时间戳部分占用的位数。
-const TIMESTAMP_BITS: u8 = 41;
+const SNOWFLAKE_TIMESTAMP_BITS: u8 = 41;
 
 // 雪花 ID 中 worker 部分占用的位数。
-const WORKER_BITS: u8 = 10;
+const SNOWFLAKE_WORKER_BITS: u8 = 10;
 
 // 雪花 ID 中同毫秒序列部分占用的位数。
-const SEQUENCE_BITS: u8 = 12;
+const SNOWFLAKE_SEQUENCE_BITS: u8 = 12;
 
 // 雪花 ID 中 worker 部分的最大可表示值。
-const WORKER_MASK: u64 = (1_u64 << WORKER_BITS) - 1;
+const SNOWFLAKE_WORKER_MASK: u64 = (1_u64 << SNOWFLAKE_WORKER_BITS) - 1;
 
 // 雪花 ID 中同毫秒序列部分的最大可表示值。
-const SEQUENCE_MASK: u64 = (1_u64 << SEQUENCE_BITS) - 1;
+const SNOWFLAKE_SEQUENCE_MASK: u64 = (1_u64 << SNOWFLAKE_SEQUENCE_BITS) - 1;
 
 // 雪花 ID 中时间戳部分的最大可表示值。
-const TIMESTAMP_MASK: u64 = (1_u64 << TIMESTAMP_BITS) - 1;
+const SNOWFLAKE_TIMESTAMP_MASK: u64 = (1_u64 << SNOWFLAKE_TIMESTAMP_BITS) - 1;
 
 // 雪花 ID 中 worker 部分左移的位数。
-const WORKER_SHIFT: u8 = SEQUENCE_BITS;
+const SNOWFLAKE_WORKER_SHIFT: u8 = SNOWFLAKE_SEQUENCE_BITS;
 
 // 雪花 ID 中时间戳部分左移的位数。
-const TIMESTAMP_SHIFT: u8 = WORKER_BITS + SEQUENCE_BITS;
+const SNOWFLAKE_TIMESTAMP_SHIFT: u8 = SNOWFLAKE_WORKER_BITS + SNOWFLAKE_SEQUENCE_BITS;
+
+// 雪花 ID 等待下一毫秒时的单次休眠时间。
+const SNOWFLAKE_NEXT_MILLIS_SLEEP: Duration = Duration::from_micros(100);
+
+// 雪花 ID 遇到短暂时钟回拨时的单次休眠时间。
+const SNOWFLAKE_CLOCK_BACKWARD_SLEEP: Duration = Duration::from_millis(1);
 
 // IronMesh 雪花 ID 生成器。
 pub(crate) struct IronSnowflakeIdGenerator;
@@ -57,7 +63,7 @@ impl IronSnowflakeIdGenerator {
                 return timestamp_ms;
             }
 
-            std::thread::sleep(Duration::from_micros(100));
+            std::thread::sleep(SNOWFLAKE_NEXT_MILLIS_SLEEP);
         }
     }
 
@@ -98,8 +104,8 @@ impl IronSnowflakeAtomicGenerator {
     fn new(seed: &str) -> Self {
         let now_nanos = IronSnowflakeIdGenerator::current_unix_nanos();
         let mixed = IronSnowflakeIdGenerator::mix_seed(seed, now_nanos);
-        let worker_id = (mixed & WORKER_MASK) as u16;
-        let initial_sequence = (mixed >> WORKER_BITS) & SEQUENCE_MASK;
+        let worker_id = (mixed & SNOWFLAKE_WORKER_MASK) as u16;
+        let initial_sequence = (mixed >> SNOWFLAKE_WORKER_BITS) & SNOWFLAKE_SEQUENCE_MASK;
 
         Self {
             worker_id,
@@ -112,21 +118,21 @@ impl IronSnowflakeAtomicGenerator {
         loop {
             let timestamp_ms = IronSnowflakeIdGenerator::current_timestamp_ms();
             let timestamp_part = timestamp_ms - IRON_SNOWFLAKE_EPOCH_MS;
-            if timestamp_part > TIMESTAMP_MASK {
+            if timestamp_part > SNOWFLAKE_TIMESTAMP_MASK {
                 panic!("系统时间超过雪花 ID 时间戳范围，无法生成雪花 ID");
             }
 
             let old_state = self.state.load(Ordering::Relaxed);
-            let old_timestamp_part = old_state >> SEQUENCE_BITS;
-            let old_sequence = old_state & SEQUENCE_MASK;
+            let old_timestamp_part = old_state >> SNOWFLAKE_SEQUENCE_BITS;
+            let old_sequence = old_state & SNOWFLAKE_SEQUENCE_MASK;
 
             if timestamp_part < old_timestamp_part {
-                std::thread::sleep(Duration::from_millis(1));
+                std::thread::sleep(SNOWFLAKE_CLOCK_BACKWARD_SLEEP);
                 continue;
             }
 
             let (next_timestamp_part, next_sequence) = if timestamp_part == old_timestamp_part {
-                let next_sequence = (old_sequence + 1) & SEQUENCE_MASK;
+                let next_sequence = (old_sequence + 1) & SNOWFLAKE_SEQUENCE_MASK;
                 if next_sequence == 0 {
                     let next_timestamp_ms = IronSnowflakeIdGenerator::wait_next_millisecond(
                         old_timestamp_part + IRON_SNOWFLAKE_EPOCH_MS,
@@ -139,14 +145,14 @@ impl IronSnowflakeAtomicGenerator {
                 (timestamp_part, 0)
             };
 
-            let next_state = (next_timestamp_part << SEQUENCE_BITS) | next_sequence;
+            let next_state = (next_timestamp_part << SNOWFLAKE_SEQUENCE_BITS) | next_sequence;
             if self
                 .state
                 .compare_exchange_weak(old_state, next_state, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
-                return (next_timestamp_part << TIMESTAMP_SHIFT)
-                    | ((self.worker_id as u64) << WORKER_SHIFT)
+                return (next_timestamp_part << SNOWFLAKE_TIMESTAMP_SHIFT)
+                    | ((self.worker_id as u64) << SNOWFLAKE_WORKER_SHIFT)
                     | next_sequence;
             }
 
