@@ -243,7 +243,7 @@ impl IronTcpClient {
             return;
         };
 
-        let event = IronRaftNetworkEvent {
+        let event = IronRaftNetworkEvent::TargetConnectionFailed {
             target_node_id,
             target_addr: self.target_addr.clone(),
             error_message: error.to_string(),

@@ -27,6 +27,9 @@ pub(crate) const LEARNER_REMOVE_RETRY_INTERVAL: Duration = Duration::from_millis
 // learner 断线后尝试移出 membership 的最大次数。
 pub(crate) const LEARNER_REMOVE_RETRY_LIMIT: usize = 3;
 
+// learner 本地 TCP 连接断开后等待 leader 清理 membership 的时间。
+pub(crate) const LEARNER_REJOIN_AFTER_DISCONNECT_DELAY: Duration = Duration::from_millis(500);
+
 // 探测启动节点 TCP 地址是否可达的最长时间。
 pub(crate) const PEER_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 

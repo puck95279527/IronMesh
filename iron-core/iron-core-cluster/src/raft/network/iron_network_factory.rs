@@ -12,10 +12,16 @@ use crate::raft::network::iron_tcp_client::IronTcpCachedStream;
 
 // IronMesh Raft TCP 连接事件。
 #[derive(Clone, Debug)]
-pub(crate) struct IronRaftNetworkEvent {
-    pub target_node_id: u64,   // 断线目标节点标识。
-    pub target_addr: String,   // 断线目标节点 TCP 地址。
-    pub error_message: String, // 触发断线事件的错误信息。
+pub(crate) enum IronRaftNetworkEvent {
+    TargetConnectionFailed {
+        target_node_id: u64,   // 断线目标节点标识。
+        target_addr: String,   // 断线目标节点 TCP 地址。
+        error_message: String, // 触发断线事件的错误信息。
+    },
+    LocalConnectionClosed {
+        peer_addr: String,     // 本地 TCP 连接对端地址。
+        error_message: String, // 本地连接关闭原因。
+    },
 }
 
 // IronMesh Raft TCP 共享连接缓存。

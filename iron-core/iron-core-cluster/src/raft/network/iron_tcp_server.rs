@@ -14,12 +14,14 @@ use tokio::net::TcpStream;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 use tokio::sync::TryAcquireError;
+use tokio::sync::mpsc;
 use tokio_util::codec::Framed;
 
 use crate::control_plane::iron_cluster_config::RAFT_TCP_MAX_CONNECTIONS;
 use crate::control_plane::iron_cluster_config::RAFT_TCP_READ_TIMEOUT;
 use crate::control_plane::iron_cluster_config::RAFT_TCP_WRITE_TIMEOUT;
 use crate::raft::IronTypeConfig;
+use crate::raft::network::iron_network_factory::IronRaftNetworkEvent;
 use crate::raft::network::protocol::IronTcpFrameCodec;
 use crate::raft::network::protocol::IronTcpRequest;
 use crate::raft::network::protocol::IronTcpResponse;
@@ -27,18 +29,24 @@ use crate::raft::network::protocol::IronTcpResponse;
 // IronMesh Raft TCP 服务端。
 #[derive(Clone)]
 pub struct IronTcpServer {
-    pub raft: Raft<IronTypeConfig>,     // Raft 节点句柄。
-    pub boot_node_ids: BTreeSet<u64>,   // 注册节点 ID 表。
-    connection_limiter: Arc<Semaphore>, // TCP 连接并发限制器。
+    pub raft: Raft<IronTypeConfig>,                   // Raft 节点句柄。
+    pub boot_node_ids: BTreeSet<u64>,                 // 注册节点 ID 表。
+    connection_limiter: Arc<Semaphore>,               // TCP 连接并发限制器。
+    event_sender: mpsc::Sender<IronRaftNetworkEvent>, // TCP 连接事件发送器。
 }
 
 impl IronTcpServer {
     // 创建 TCP 服务端。
-    pub fn new(raft: Raft<IronTypeConfig>, boot_node_ids: BTreeSet<u64>) -> Self {
+    pub(crate) fn new(
+        raft: Raft<IronTypeConfig>,
+        boot_node_ids: BTreeSet<u64>,
+        event_sender: mpsc::Sender<IronRaftNetworkEvent>,
+    ) -> Self {
         Self {
             raft,
             boot_node_ids,
             connection_limiter: Arc::new(Semaphore::new(RAFT_TCP_MAX_CONNECTIONS)),
+            event_sender,
         }
     }
 
@@ -63,14 +71,39 @@ impl IronTcpServer {
 
             let raft = self.raft.clone();
             let boot_node_ids = self.boot_node_ids.clone();
+            let event_sender = self.event_sender.clone();
 
             tokio::spawn(async move {
-                if let Err(error) =
-                    Self::handle_connection(raft, boot_node_ids, stream, peer_addr, permit).await
-                {
-                    Self::log_connection_error(peer_addr, &error);
-                }
+                let result =
+                    Self::handle_connection(raft, boot_node_ids, stream, peer_addr, permit).await;
+                let error_message = match &result {
+                    Ok(()) => "Raft TCP 连接已关闭".to_string(),
+                    Err(error) => {
+                        Self::log_connection_error(peer_addr, error);
+                        error.to_string()
+                    }
+                };
+                Self::report_local_connection_closed(event_sender, peer_addr, error_message).await;
             });
+        }
+    }
+
+    // 上报本地 TCP 连接关闭事件。
+    async fn report_local_connection_closed(
+        event_sender: mpsc::Sender<IronRaftNetworkEvent>,
+        peer_addr: SocketAddr,
+        error_message: String,
+    ) {
+        let event = IronRaftNetworkEvent::LocalConnectionClosed {
+            peer_addr: peer_addr.to_string(),
+            error_message,
+        };
+
+        if event_sender.send(event).await.is_err() {
+            tracing::warn!(
+                %peer_addr,
+                "[Iron] [cluster] Raft TCP 本地断线事件接收任务已关闭"
+            );
         }
     }
 
