@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // IronMesh 雪花 ID 的项目纪元，使用 2024-01-01 00:00:00 UTC。
 const IRON_SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
@@ -30,12 +30,6 @@ const SNOWFLAKE_WORKER_SHIFT: u8 = SNOWFLAKE_SEQUENCE_BITS;
 // 雪花 ID 中时间戳部分左移的位数。
 const SNOWFLAKE_TIMESTAMP_SHIFT: u8 = SNOWFLAKE_WORKER_BITS + SNOWFLAKE_SEQUENCE_BITS;
 
-// 雪花 ID 等待下一毫秒时的单次休眠时间。
-const SNOWFLAKE_NEXT_MILLIS_SLEEP: Duration = Duration::from_micros(100);
-
-// 雪花 ID 遇到短暂时钟回拨时的单次休眠时间。
-const SNOWFLAKE_CLOCK_BACKWARD_SLEEP: Duration = Duration::from_millis(1);
-
 // IronMesh 雪花 ID 生成器。
 pub(crate) struct IronSnowflakeIdGenerator;
 
@@ -55,38 +49,37 @@ impl IronSnowflakeIdGenerator {
         generator.next_id()
     }
 
-    // 等待系统时间进入指定毫秒之后的下一毫秒。
-    fn wait_next_millisecond(last_timestamp_ms: u64) -> u64 {
-        loop {
-            let timestamp_ms = Self::current_timestamp_ms();
-            if timestamp_ms > last_timestamp_ms {
-                return timestamp_ms;
-            }
-
-            std::thread::sleep(SNOWFLAKE_NEXT_MILLIS_SLEEP);
+    // 选择指定逻辑毫秒之后的下一毫秒。
+    fn next_timestamp_after(last_timestamp_part: u64) -> Option<u64> {
+        match Self::current_timestamp_part() {
+            Some(timestamp_part) if timestamp_part > last_timestamp_part => Some(timestamp_part),
+            _ if last_timestamp_part < SNOWFLAKE_TIMESTAMP_MASK => Some(last_timestamp_part + 1),
+            _ => None,
         }
     }
 
-    // 读取当前系统绝对毫秒时间。
-    fn current_timestamp_ms() -> u64 {
-        let current_timestamp_ms = SystemTime::now()
+    // 读取当前系统毫秒相对项目纪元的偏移。
+    fn current_timestamp_part() -> Option<u64> {
+        let current_timestamp_ms: u64 = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("系统时间早于 Unix epoch，无法生成雪花 ID")
-            .as_millis() as u64;
+            .ok()?
+            .as_millis()
+            .try_into()
+            .ok()?;
 
         if current_timestamp_ms < IRON_SNOWFLAKE_EPOCH_MS {
-            panic!("系统时间早于 IronMesh 雪花 ID 纪元，无法生成雪花 ID");
+            return None;
         }
 
-        current_timestamp_ms
+        Some((current_timestamp_ms - IRON_SNOWFLAKE_EPOCH_MS).min(SNOWFLAKE_TIMESTAMP_MASK))
     }
 
     // 读取当前系统绝对纳秒时间。
     fn current_unix_nanos() -> u128 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("系统时间早于 Unix epoch，无法生成雪花 ID")
-            .as_nanos()
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0)
     }
 
     // 混合 seed、进程号和当前纳秒时间，降低多个 learner 同时启动时的 worker 碰撞概率。
@@ -116,28 +109,23 @@ impl IronSnowflakeAtomicGenerator {
     // 通过 CAS 生成下一个全局 u64 雪花 ID。
     fn next_id(&self) -> u64 {
         loop {
-            let timestamp_ms = IronSnowflakeIdGenerator::current_timestamp_ms();
-            let timestamp_part = timestamp_ms - IRON_SNOWFLAKE_EPOCH_MS;
-            if timestamp_part > SNOWFLAKE_TIMESTAMP_MASK {
-                panic!("系统时间超过雪花 ID 时间戳范围，无法生成雪花 ID");
-            }
-
             let old_state = self.state.load(Ordering::Relaxed);
             let old_timestamp_part = old_state >> SNOWFLAKE_SEQUENCE_BITS;
             let old_sequence = old_state & SNOWFLAKE_SEQUENCE_MASK;
-
-            if timestamp_part < old_timestamp_part {
-                std::thread::sleep(SNOWFLAKE_CLOCK_BACKWARD_SLEEP);
-                continue;
-            }
+            let timestamp_part = IronSnowflakeIdGenerator::current_timestamp_part()
+                .unwrap_or(old_timestamp_part)
+                .max(old_timestamp_part);
 
             let (next_timestamp_part, next_sequence) = if timestamp_part == old_timestamp_part {
                 let next_sequence = (old_sequence + 1) & SNOWFLAKE_SEQUENCE_MASK;
                 if next_sequence == 0 {
-                    let next_timestamp_ms = IronSnowflakeIdGenerator::wait_next_millisecond(
-                        old_timestamp_part + IRON_SNOWFLAKE_EPOCH_MS,
-                    );
-                    (next_timestamp_ms - IRON_SNOWFLAKE_EPOCH_MS, next_sequence)
+                    let Some(next_timestamp_part) =
+                        IronSnowflakeIdGenerator::next_timestamp_after(old_timestamp_part)
+                    else {
+                        std::hint::spin_loop();
+                        continue;
+                    };
+                    (next_timestamp_part, next_sequence)
                 } else {
                     (timestamp_part, next_sequence)
                 }

@@ -7,7 +7,7 @@ use bytes::BytesMut;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
-use crate::constant::IRON_TCP_MAX_FRAME_BYTES;
+use crate::control_plane::iron_cluster_config::IRON_TCP_MAX_FRAME_BYTES;
 use crate::raft::network::protocol::IronTcpRequest;
 use crate::raft::network::protocol::IronTcpResponse;
 

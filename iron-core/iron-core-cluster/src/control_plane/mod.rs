@@ -1,4 +1,5 @@
 // 集群控制面模块。
+pub mod iron_cluster_config;
 pub mod iron_cluster_manager;
 pub mod iron_cluster_manager_flow;
 pub mod iron_cluster_manager_support;
